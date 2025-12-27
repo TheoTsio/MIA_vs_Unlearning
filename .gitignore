@@ -19,6 +19,12 @@ rad.json
 #License-file
 *.flf
 
+#models
+*.pth
+*.jolib
+*.h5
+*.onnx
+
 #compression files
 *.zip
 *.tar.gz
