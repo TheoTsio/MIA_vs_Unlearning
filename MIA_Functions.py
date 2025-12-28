@@ -1,4 +1,5 @@
 import os
+from pyexpat import model
 import sys
 from pathlib import Path
 
@@ -58,18 +59,21 @@ def create_membership_dataframe(
     non_member_data: pd.DataFrame
 ) -> pd.DataFrame:
     """Create a DataFrame with model outputs and membership status. Also apply softmax on the outputs"""
-
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
     model.eval()
-    member_tensor = torch.tensor(member_data.values, dtype=torch.float32)
-    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32)
+    model = model.to(device)
+    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).to(device)
+    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).to(device)
 
-    member_outputs = F.softmax(model(member_tensor), dim=1)
-    non_member_outputs = F.softmax(model(non_member_tensor), dim=1)
+    with torch.no_grad():
+        member_outputs = F.softmax(model(member_tensor), dim=1)
+        non_member_outputs = F.softmax(model(non_member_tensor), dim=1)
 
-    member_df = pd.DataFrame(member_outputs.detach().numpy())
+    member_df = pd.DataFrame(member_outputs.cpu().detach().numpy())
     member_df['membership'] = True
 
-    non_member_df = pd.DataFrame(non_member_outputs.detach().numpy())
+    non_member_df = pd.DataFrame(non_member_outputs.cpu().detach().numpy())
     non_member_df['membership'] = False
 
     membership_df = pd.concat([member_df, non_member_df], ignore_index=True)

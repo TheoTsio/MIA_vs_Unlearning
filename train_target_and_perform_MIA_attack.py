@@ -19,9 +19,15 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 from torchvision import datasets, transforms
 from PIL import Image
-from Target_Models.target_model_1a import TargetModel_1a
+from Target_Models.target_model_1a import *
+from Target_Models.target_model_2a import *
+from Target_Models.target_model_1c import *
+import gc
 
 from preprocess_data import *
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
 def set_random_seed(seed: int = 42) -> None:
     random.seed(seed)
@@ -32,9 +38,7 @@ def set_random_seed(seed: int = 42) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-model_architectures = {
-    'TargetModel_1a': TargetModel_1a,
-}
+model_architecture = TargetModel_1c
 
 
 def train_model(
@@ -49,12 +53,14 @@ def train_model(
 ) -> None:
     best_validation_loss = float('inf')
     patience_counter = 0
+    model.to(device)  # Force model to GPU
 
     for epoch in tqdm(range(num_epochs), desc='Epochs'):
         model.train()
         total_training_loss = 0.0
 
         for inputs, labels in train_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = model(inputs)
             # print(outputs, labels)
@@ -99,11 +105,13 @@ def create_membership_dataframe(
     """Create a DataFrame with model outputs and membership status. Also apply softmax on the outputs"""
 
     model.eval()
-    member_tensor = torch.tensor(member_data.values, dtype=torch.float32)
-    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32)
+    model.to(device)
+    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).to(device)
+    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).to(device)
 
-    member_outputs = F.softmax(model(member_tensor), dim=1)
-    non_member_outputs = F.softmax(model(non_member_tensor), dim=1)
+    with torch.no_grad():
+        member_outputs = F.softmax(model(member_tensor), dim=1)
+        non_member_outputs = F.softmax(model(non_member_tensor), dim=1)
 
     member_df = pd.DataFrame(member_outputs.detach().numpy())
     member_df['membership'] = True
@@ -146,6 +154,9 @@ def evaluate_attack_model_get_stats(dataset, model):
 
 def evaluate_model_performance(model, loss_function, X_tensor, y_tensor):
     model.eval()
+    model.to(device)
+    X_tensor = X_tensor.to(device)
+    y_tensor = y_tensor.to(device)
     with torch.no_grad():
         outputs = model(X_tensor)
         loss = loss_function(outputs, y_tensor)
@@ -165,16 +176,17 @@ def create_membership_dataframe(
     """Create a DataFrame with model outputs and membership status. Also apply softmax on the outputs"""
 
     model.eval()
-    member_tensor = torch.tensor(member_data.values, dtype=torch.float32)
-    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32)
+    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).to(device)
+    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).to(device)
 
-    member_outputs = F.softmax(model(member_tensor), dim=1)
-    non_member_outputs = F.softmax(model(non_member_tensor), dim=1)
+    with torch.no_grad():
+        member_outputs = F.softmax(model(member_tensor), dim=1)
+        non_member_outputs = F.softmax(model(non_member_tensor), dim=1)
 
-    member_df = pd.DataFrame(member_outputs.detach().numpy())
+    member_df = pd.DataFrame(member_outputs.cpu().detach().numpy())
     member_df['membership'] = True
 
-    non_member_df = pd.DataFrame(non_member_outputs.detach().numpy())
+    non_member_df = pd.DataFrame(non_member_outputs.cpu().detach().numpy())
     non_member_df['membership'] = False
 
     membership_df = pd.concat([member_df, non_member_df], ignore_index=True)
@@ -300,10 +312,10 @@ Data preprocessing
 set_random_seed(42)
 
 # X, y, num_features, num_classes = get_mnist_dataset()
-X, y, num_features, num_classes = get_cifar10_dataset()
+# X, y, num_features, num_classes = get_cifar10_dataset()
 # X, y, num_features, num_classes = get_adults_dataset()
-# X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
-# X, y, num_features, num_classes = get_MUFAC_dataset("./data/mufac-128/custom_train_dataset.csv", "./data/mufac-128/train_images", percentage_of_rows_to_drop = 0.4)
+X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
+# X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
 # X, y, num_features, num_classes = get_texas_100_dataset(path='texas100.npz', limit_rows=40_000)
 
 
@@ -342,7 +354,7 @@ y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 
 # Hyperparameters for images
 learning_rate = 0.001
-num_epochs = 300
+num_epochs = 100
 batch_size = 32
 early_stopping_patience = 3
 enable_early_stopping = False 
@@ -365,7 +377,7 @@ output_size = num_classes
 print("NN input size", input_size)
 print("NN output size", output_size)
 
-target_model = model_architectures['TargetModel_1a'](input_size=input_size, output_size=output_size)
+target_model = model_architecture(input_size=input_size, output_size=output_size)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(target_model.parameters(), lr=learning_rate, momentum=0.9)
@@ -378,14 +390,15 @@ test_loss, test_accuracy, test_precision, test_recall = evaluate_model_performan
 print(f'\nTraining Loss: {train_loss:.4f}, Training Accuracy: {train_accuracy:.4f}')
 print(f'Test Loss: {test_loss:.4f}, Accuracy: {test_accuracy:.4f}')
 print(f'Test Precision: {test_precision:.4f}, Test Recall: {test_recall:.4f}')
-
-
+# Save the models 
+torch.save(target_model, 'models/dataset_target_model.pth')
+# target_model = torch.load('models/dataset_target_model.pth' )
 """
 Train shadow models
 """
 # Hyperparameters for training the shadow model
 # learning_rate = 0.001
-# num_epochs = 30
+# num_epochs = 10
 # batch_size = 32
 # early_stopping_patience = 3
 # enable_early_stopping = False
@@ -420,7 +433,7 @@ def train_shadow_models_and_attack_model(target_model, X_shadow, y_shadow, num_s
         input_size = num_features
         output_size = num_classes
 
-        shadow_model = target_model(input_size, output_size)
+        shadow_model = model_architecture(input_size=input_size, output_size=output_size)
 
         # Define loss function and optimizer
         criterion = nn.CrossEntropyLoss()
@@ -435,12 +448,17 @@ def train_shadow_models_and_attack_model(target_model, X_shadow, y_shadow, num_s
         sample_size = min(len(X_train), len(X_test))
         X_member_sample = X_train.sample(n=sample_size, replace=False)
         X_non_member_sample = X_test.sample(n=sample_size, replace=False)
-
         # Generate dataset with membership status from current shadow model
         current_shadow_model_outputs_df = create_membership_dataframe(shadow_model, X_member_sample, X_non_member_sample)
 
         # Append to the results DataFrame
         shadow_model_outputs_df = pd.concat([shadow_model_outputs_df, current_shadow_model_outputs_df], ignore_index=True)
+        
+        print(f"Finished Model {model_index + 1}. Clearing memory...")
+        del shadow_model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     print('\nResulting shadow model outputs dataset shape:', shadow_model_outputs_df.shape)
 
@@ -456,7 +474,7 @@ def train_shadow_models_and_attack_model(target_model, X_shadow, y_shadow, num_s
 """
 Based on the Target Model predictions, use the Attack Model to predict membership status for each data point
 """
-attack_model = train_shadow_models_and_attack_model(model_architectures['TargetModel_1a'], X_shadow, y_shadow, num_shadow_models, num_features, num_classes, batch_size, learning_rate, num_epochs)
+attack_model = train_shadow_models_and_attack_model(model_architecture, X_shadow, y_shadow, num_shadow_models, num_features, num_classes, batch_size, learning_rate, num_epochs)
 # Sample an equal number of non-member data
 sample_size = min(len(X_test_MIA), len(X_target_train_set))
 train_member_data = X_target_train_set.sample(n=sample_size, replace=False)
@@ -468,6 +486,5 @@ evaluate_attack_model(dataset_from_target_model_outputs, attack_model, 'ROC Curv
 
 # Get a typical input tensor from the training data loader
 
-# Save the models 
-torch.save(target_model, 'models/dataset_target_model.pth')
+
 joblib.dump(attack_model , 'models/dataset_attack_model.jolib')

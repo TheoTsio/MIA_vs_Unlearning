@@ -4,8 +4,11 @@ import random
 import numpy as np
 import pandas as pd
 import sys
-# Add the SFTC-Unlearn directory to Python path
-sftc_unlearn_path = '/home/theo/Desktop/Evaluate_Mia_Through_Unlearning'
+import os
+
+
+current_dir = os.getcwd()
+sftc_unlearn_path = current_dir
 if sftc_unlearn_path not in sys.path:
     sys.path.insert(0, sftc_unlearn_path)
 
@@ -46,6 +49,10 @@ from Unlearning_Functions_Tracking_MIA.neg_grad_track_mia import neg_grad_tracki
 
 from preprocess_data import *
 from Target_Models.target_model_1a import *
+
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
 '''
 Default Functions
@@ -91,17 +98,9 @@ def create_membership_dataframe(
 if __name__ == "__main__":
     # load pre-trained models
 
-    target_model = torch.load('models/dataset_target_model.pth' )
-    attack_model = joblib.load("models/dataset_attack_model.jolib")
-
-    # target_model = torch.load('models/purchase_target_model.pth' )
-    # attack_model = joblib.load("models/purchase_attack_model.jolib")
-
-    # target_model = torch.load('models/texas_100_target_model.pth' )
-    # attack_model = joblib.load('models/texas_100_attack_model.jolib')
-
-    # target_model = torch.load('models/mufac_target_model.pth' )
-    # attack_model = joblib.load("models/mufac_attack_model.jolib")
+    target_model = torch.load('models/1c_purchase_target_model.pth')
+    attack_model = joblib.load("models/1c_purchase_attack_model.jolib")
+    
     
     """
     Data preprocessing
@@ -109,9 +108,9 @@ if __name__ == "__main__":
     # load the dataset
     set_random_seed(42)
 
-    X, y, num_features, num_classes = get_cifar10_dataset()
-    # X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
-    # X, y, num_features, num_classes = get_MUFAC_dataset("./data/mufac-128/custom_train_dataset.csv", "./data/mufac-128/train_images", percentage_of_rows_to_drop = 0.4)
+    # X, y, num_features, num_classes = get_cifar10_dataset()
+    X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
+    # X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
     # X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
     print(X.shape)
 
@@ -147,9 +146,9 @@ if __name__ == "__main__":
     # Define the forget set to forget class 7
     X_retain, X_forget, y_retain, y_forget = train_test_split(X_target_train_set, y_target_train_set, test_size=0.2, random_state=42, stratify=y_target_train_set)
 
-    # on CIFAR10 data specifically unlearn only class 7 
-    y_forget = y_forget[y_forget['label'] == 7]
-    X_forget = X_forget.loc[y_forget.index]
+    # # on CIFAR10 data specifically unlearn only class 7 
+    # y_forget = y_forget[y_forget['label'] == 7]
+    # X_forget = X_forget.loc[y_forget.index]
 
 
     X_forget_tensor = torch.tensor(X_forget.values, dtype=torch.float32)
@@ -165,7 +164,7 @@ if __name__ == "__main__":
     merged_loader = create_merged_loader(X_retain_tensor, y_retain_tensor, X_forget_tensor, y_forget_tensor, batch_size=32, shuffle=True)
 
     # Hyperparameters for Unlearning
-    learning_rate = 0.00025
+    learning_rate = 0.0002
     epochs = 30
     batch_size = 32
 
@@ -196,9 +195,9 @@ if __name__ == "__main__":
     num_epochs_MIA = 50
     num_shadow_models = 5
     # Unlearn the target neural network
-    # mia_stats, accs, losses = scrub_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model,  unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=None, teacher_model=teacher_model)
-    mia_stats, accs, losses = neg_grad_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=None, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
-    # mia_stats, accs, losses = sftc_unlearn_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=None, merged_loader=merged_loader, teacher_model=teacher_model, dummy_model=dummy_model,  X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
+    mia_stats, accs, losses = scrub_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model,  unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, teacher_model=teacher_model)
+    # mia_stats, accs, losses = neg_grad_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
+    # mia_stats, accs, losses = sftc_unlearn_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, merged_loader=merged_loader, teacher_model=teacher_model, dummy_model=dummy_model,  X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
 
     '''
     Plots
