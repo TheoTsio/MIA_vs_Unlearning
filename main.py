@@ -186,7 +186,7 @@ if __name__ == "__main__":
     merged_loader = create_merged_loader(X_retain_tensor, y_retain_tensor, X_forget_tensor, y_forget_tensor, batch_size=32, shuffle=True)
 
     # Hyperparameters for Unlearning
-    learning_rate = 0.0001
+    learning_rate = 0.0003
     epochs = 30
     batch_size = 32
 
