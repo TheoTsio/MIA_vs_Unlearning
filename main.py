@@ -110,8 +110,8 @@ def create_membership_dataframe(
 if __name__ == "__main__":
     # load pre-trained models
 
-    target_model = torch.load('models/3c_purchase_target_model.pth')
-    attack_model = joblib.load("models/3c_purchase_attack_model.jolib")
+    target_model = torch.load('models/3d_texas_target_model.pth')
+    attack_model = joblib.load("models/3d_texas_attack_model.jolib")
     
     
     """
@@ -121,9 +121,9 @@ if __name__ == "__main__":
     set_random_seed(42)
 
     # X, y, num_features, num_classes = get_cifar10_dataset()
-    X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
+    # X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
     # X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
-    # X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
+    X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
     print(X.shape)
 
     input_size = num_features 
@@ -187,7 +187,7 @@ if __name__ == "__main__":
     merged_loader = create_merged_loader(X_retain_tensor, y_retain_tensor, X_forget_tensor, y_forget_tensor, batch_size=32, shuffle=True)
 
     # Hyperparameters for Unlearning
-    learning_rate = 0.00009
+    learning_rate = 0.0000001
     epochs = 30
     batch_size = 32
 
