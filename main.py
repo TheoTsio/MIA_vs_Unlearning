@@ -8,6 +8,7 @@ import os
 
 import sys
 
+image_size = 128
 
 current_dir = os.getcwd()
 sftc_unlearn_path = current_dir
@@ -87,8 +88,8 @@ def create_membership_dataframe(
     # non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).to(device)
     
     '''For CNNs'''
-    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).reshape(-1, 3, 32, 32).to(device)
-    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).reshape(-1, 3, 32, 32).to(device)
+    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size).to(device)
+    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size).to(device)
 
     with torch.no_grad():
         member_outputs = F.softmax(model(member_tensor), dim=1)
@@ -109,8 +110,8 @@ def create_membership_dataframe(
 if __name__ == "__main__":
     # load pre-trained models
 
-    target_model = torch.load('models/2a_cifar_target_model.pth')
-    attack_model = joblib.load("models/2a_cifar_attack_model.jolib")
+    target_model = torch.load('models/2b_MuFac_target_model.pth')
+    attack_model = joblib.load("models/2b_MuFac_attack_model.jolib")
     
     
     """
@@ -119,9 +120,9 @@ if __name__ == "__main__":
     # load the dataset
     set_random_seed(42)
 
-    X, y, num_features, num_classes = get_cifar10_dataset()
+    # X, y, num_features, num_classes = get_cifar10_dataset()
     # X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
-    # X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
+    X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
     # X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
     print(X.shape)
 
@@ -173,20 +174,20 @@ if __name__ == "__main__":
     # y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
     
     # Reshape for CNN (CIFAR-10: 3 channels, 32x32 pixels)
-    X_forget_tensor = torch.tensor(X_forget.values, dtype=torch.float32).reshape(-1, 3, 32, 32)
+    X_forget_tensor = torch.tensor(X_forget.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
     y_forget_tensor = torch.tensor(y_forget.values, dtype=torch.long).squeeze()
 
-    X_retain_tensor = torch.tensor(X_retain.values, dtype=torch.float32).reshape(-1, 3, 32, 32)
+    X_retain_tensor = torch.tensor(X_retain.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
     y_retain_tensor = torch.tensor(y_retain.values, dtype=torch.long).squeeze()
 
-    X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).reshape(-1, 3, 32, 32)
+    X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
     y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 
     # Merge Loader only for sftc
     merged_loader = create_merged_loader(X_retain_tensor, y_retain_tensor, X_forget_tensor, y_forget_tensor, batch_size=32, shuffle=True)
 
     # Hyperparameters for Unlearning
-    learning_rate = 0.000015
+    learning_rate = 0.000065
     epochs = 30
     batch_size = 32
 

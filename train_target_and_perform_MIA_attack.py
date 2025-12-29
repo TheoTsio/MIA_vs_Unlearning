@@ -21,6 +21,7 @@ from torchvision import datasets, transforms
 from PIL import Image
 from Target_Models.target_model_1a import *
 from Target_Models.target_model_2a import *
+from Target_Models.target_model_2b import *
 from Target_Models.target_model_1c import *
 import gc
 
@@ -29,7 +30,7 @@ from preprocess_data import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
-
+image_size = 128
 def set_random_seed(seed: int = 42) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -39,7 +40,7 @@ def set_random_seed(seed: int = 42) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-model_architecture = TargetModel_2a
+model_architecture = TargetModel_2b
 
 
 def train_model(
@@ -113,8 +114,8 @@ def create_membership_dataframe(
     # non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).to(device)
     
     '''For CNNs'''
-    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).reshape(-1, 3, 32, 32).to(device)
-    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).reshape(-1, 3, 32, 32).to(device)
+    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size).to(device)
+    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size).to(device)
 
     with torch.no_grad():
         member_outputs = F.softmax(model(member_tensor), dim=1)
@@ -178,7 +179,7 @@ def evaluate_model_performance(model, loss_function, X_tensor, y_tensor, eval_ba
             # batch_X = X_tensor[i:i+eval_batch_size].to(device)
             
             '''For CNNs'''
-            batch_X = X_tensor[i:i+eval_batch_size].reshape(-1, 3, 32, 32).to(device)
+            batch_X = X_tensor[i:i+eval_batch_size].reshape(-1, 3, image_size, image_size).to(device)
             
             batch_y = y_tensor[i:i+eval_batch_size].to(device)
             
@@ -327,10 +328,10 @@ Data preprocessing
 set_random_seed(42)
 
 # X, y, num_features, num_classes = get_mnist_dataset()
-X, y, num_features, num_classes = get_cifar10_dataset()
+# X, y, num_features, num_classes = get_cifar10_dataset()
 # X, y, num_features, num_classes = get_adults_dataset()
 # X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
-# X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
+X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
 # X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
 
 
@@ -369,9 +370,9 @@ y_target_train_set = y_train
 # y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 
 ''''For CNNs'''
-X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32).reshape(-1, 3, 32, 32)
+X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
 y_train_tensor = torch.tensor(y_train.values, dtype=torch.long).squeeze()
-X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).reshape(-1, 3, 32, 32)
+X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
 y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 
 
@@ -415,6 +416,10 @@ print(f'Test Loss: {test_loss:.4f}, Accuracy: {test_accuracy:.4f}')
 print(f'Test Precision: {test_precision:.4f}, Test Recall: {test_recall:.4f}')
 # Save the models 
 torch.save(target_model, 'models/dataset_target_model.pth')
+del target_model
+gc.collect()
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
 # target_model = torch.load('models/dataset_target_model.pth' )
 """
 Train shadow models
@@ -448,9 +453,9 @@ def train_shadow_models_and_attack_model(target_model, X_shadow, y_shadow, num_s
         # y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 
         ''''For CNNs'''
-        X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32).reshape(-1, 3, 32, 32)
+        X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
         y_train_tensor = torch.tensor(y_train.values, dtype=torch.long).squeeze()
-        X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).reshape(-1, 3, 32, 32)
+        X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
         y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 
 
@@ -511,6 +516,9 @@ sample_size = min(len(X_test_MIA), len(X_target_train_set))
 train_member_data = X_target_train_set.sample(n=sample_size, replace=False)
 train_non_member_data = X_test_MIA.sample(n=sample_size, replace=False)
 # Create a dataset by QUERYING the TARGET model on member and non-member data
+
+target_model = torch.load('models/dataset_target_model.pth')
+
 dataset_from_target_model_outputs = create_membership_dataframe(target_model, train_member_data, train_non_member_data)
 # Use the ATTACK model to predict membership status
 evaluate_attack_model(dataset_from_target_model_outputs, attack_model, 'ROC Curve - Test set', plot_choice='roc')
