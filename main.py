@@ -84,12 +84,12 @@ def create_membership_dataframe(
     model.eval()
     model.to(device)
     '''For traditional ML models Only Fc'''
-    # member_tensor = torch.tensor(member_data.values, dtype=torch.float32).to(device)
-    # non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).to(device)
+    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).to(device)
+    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).to(device)
     
     '''For CNNs'''
-    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size).to(device)
-    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size).to(device)
+    # member_tensor = torch.tensor(member_data.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size).to(device)
+    # non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size).to(device)
 
     with torch.no_grad():
         member_outputs = F.softmax(model(member_tensor), dim=1)
@@ -110,8 +110,8 @@ def create_membership_dataframe(
 if __name__ == "__main__":
     # load pre-trained models
 
-    target_model = torch.load('models/2b_MuFac_target_model.pth')
-    attack_model = joblib.load("models/2b_MuFac_attack_model.jolib")
+    target_model = torch.load('models/2d_texas_target_model.pth')
+    attack_model = joblib.load("models/2d_texas_attack_model.jolib")
     
     
     """
@@ -122,8 +122,8 @@ if __name__ == "__main__":
 
     # X, y, num_features, num_classes = get_cifar10_dataset()
     # X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
-    X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
-    # X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
+    # X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
+    X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
     print(X.shape)
 
     input_size = num_features 
@@ -164,30 +164,30 @@ if __name__ == "__main__":
 
 
     '''Classic For Fully Connected Models'''
-    # X_forget_tensor = torch.tensor(X_forget.values, dtype=torch.float32)
-    # y_forget_tensor = torch.tensor(y_forget.values, dtype=torch.long).squeeze()
-
-    # X_retain_tensor = torch.tensor(X_retain.values, dtype=torch.float32)
-    # y_retain_tensor = torch.tensor(y_retain.values, dtype=torch.long).squeeze()
-
-    # X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32)
-    # y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
-    
-    # Reshape for CNN (CIFAR-10: 3 channels, 32x32 pixels)
-    X_forget_tensor = torch.tensor(X_forget.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
+    X_forget_tensor = torch.tensor(X_forget.values, dtype=torch.float32)
     y_forget_tensor = torch.tensor(y_forget.values, dtype=torch.long).squeeze()
 
-    X_retain_tensor = torch.tensor(X_retain.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
+    X_retain_tensor = torch.tensor(X_retain.values, dtype=torch.float32)
     y_retain_tensor = torch.tensor(y_retain.values, dtype=torch.long).squeeze()
 
-    X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
+    X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32)
     y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
+    
+    # Reshape for CNN (CIFAR-10: 3 channels, 32x32 pixels)
+    # X_forget_tensor = torch.tensor(X_forget.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
+    # y_forget_tensor = torch.tensor(y_forget.values, dtype=torch.long).squeeze()
+
+    # X_retain_tensor = torch.tensor(X_retain.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
+    # y_retain_tensor = torch.tensor(y_retain.values, dtype=torch.long).squeeze()
+
+    # X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
+    # y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 
     # Merge Loader only for sftc
     merged_loader = create_merged_loader(X_retain_tensor, y_retain_tensor, X_forget_tensor, y_forget_tensor, batch_size=32, shuffle=True)
 
     # Hyperparameters for Unlearning
-    learning_rate = 0.000065
+    learning_rate = 0.01
     epochs = 30
     batch_size = 32
 
@@ -218,9 +218,9 @@ if __name__ == "__main__":
     num_epochs_MIA = 50
     num_shadow_models = 5
     # Unlearn the target neural network
-    mia_stats, accs, losses = scrub_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model,  unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, teacher_model=teacher_model)
+    # mia_stats, accs, losses = scrub_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model,  unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, teacher_model=teacher_model, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
     # mia_stats, accs, losses = neg_grad_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
-    # mia_stats, accs, losses = sftc_unlearn_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, merged_loader=merged_loader, teacher_model=teacher_model, dummy_model=dummy_model,  X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
+    mia_stats, accs, losses = sftc_unlearn_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, merged_loader=merged_loader, teacher_model=teacher_model, dummy_model=dummy_model,  X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
 
     '''
     Plots

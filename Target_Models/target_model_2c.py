@@ -1,9 +1,9 @@
 import torch.nn as nn
 import torch
 
-class TargetModel_3c(nn.Module):
+class TargetModel_2c(nn.Module):
     def __init__(self, input_size=49152, output_size=10):
-        super(TargetModel_3c, self).__init__()
+        super(TargetModel_2c, self).__init__()
         # Layer 1: Input (49152) -> 256
         self.fc1 = nn.Linear(input_size, 256)
         # Layer 2: 256 -> 128

@@ -66,12 +66,12 @@ def create_membership_dataframe(
     model.eval()
     model.to(device)
     '''For traditional ML models Only Fc'''
-    # member_tensor = torch.tensor(member_data.values, dtype=torch.float32).to(device)
-    # non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).to(device)
+    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).to(device)
+    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).to(device)
     
     '''For CNNs'''
-    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).reshape(-1, 3, 32, 32).to(device)
-    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).reshape(-1, 3, 32, 32).to(device)
+    # member_tensor = torch.tensor(member_data.values, dtype=torch.float32).reshape(-1, 3, 32, 32).to(device)
+    # non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).reshape(-1, 3, 32, 32).to(device)
 
     with torch.no_grad():
         member_outputs = F.softmax(model(member_tensor), dim=1)

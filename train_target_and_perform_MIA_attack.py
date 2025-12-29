@@ -22,6 +22,7 @@ from PIL import Image
 from Target_Models.target_model_1a import *
 from Target_Models.target_model_2a import *
 from Target_Models.target_model_2b import *
+from Target_Models.target_model_2c import *
 from Target_Models.target_model_1c import *
 import gc
 
@@ -40,7 +41,7 @@ def set_random_seed(seed: int = 42) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-model_architecture = TargetModel_2b
+model_architecture = TargetModel_2c
 
 
 def train_model(
@@ -110,12 +111,12 @@ def create_membership_dataframe(
     model.eval()
     model.to(device)
     '''For traditional ML models Only Fc'''
-    # member_tensor = torch.tensor(member_data.values, dtype=torch.float32).to(device)
-    # non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).to(device)
+    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).to(device)
+    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).to(device)
     
     '''For CNNs'''
-    member_tensor = torch.tensor(member_data.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size).to(device)
-    non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size).to(device)
+    # member_tensor = torch.tensor(member_data.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size).to(device)
+    # non_member_tensor = torch.tensor(non_member_data.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size).to(device)
 
     with torch.no_grad():
         member_outputs = F.softmax(model(member_tensor), dim=1)
@@ -176,10 +177,10 @@ def evaluate_model_performance(model, loss_function, X_tensor, y_tensor, eval_ba
         # Process in batches
         for i in range(0, len(X_tensor), eval_batch_size):
             '''For traditional ML models Only Fc'''
-            # batch_X = X_tensor[i:i+eval_batch_size].to(device)
+            batch_X = X_tensor[i:i+eval_batch_size].to(device)
             
             '''For CNNs'''
-            batch_X = X_tensor[i:i+eval_batch_size].reshape(-1, 3, image_size, image_size).to(device)
+            # batch_X = X_tensor[i:i+eval_batch_size].reshape(-1, 3, image_size, image_size).to(device)
             
             batch_y = y_tensor[i:i+eval_batch_size].to(device)
             
@@ -331,8 +332,8 @@ set_random_seed(42)
 # X, y, num_features, num_classes = get_cifar10_dataset()
 # X, y, num_features, num_classes = get_adults_dataset()
 # X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
-X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
-# X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
+# X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
+X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
 
 
 """
@@ -363,22 +364,22 @@ X_target_train_set = X_train
 y_target_train_set = y_train
 
 '''For traditional ML models Only Fc'''
-# # Convert data to PyTorch tensors
-# X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32)
-# y_train_tensor = torch.tensor(y_train.values, dtype=torch.long).squeeze()
-# X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32)
-# y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
+# Convert data to PyTorch tensors
+X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32)
+y_train_tensor = torch.tensor(y_train.values, dtype=torch.long).squeeze()
+X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32)
+y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 
 ''''For CNNs'''
-X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
-y_train_tensor = torch.tensor(y_train.values, dtype=torch.long).squeeze()
-X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
-y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
+# X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
+# y_train_tensor = torch.tensor(y_train.values, dtype=torch.long).squeeze()
+# X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
+# y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 
 
 # Hyperparameters for images
 learning_rate = 0.001
-num_epochs = 100
+num_epochs = 300
 batch_size = 32
 early_stopping_patience = 3
 enable_early_stopping = False 
@@ -401,7 +402,7 @@ output_size = num_classes
 print("NN input size", input_size)
 print("NN output size", output_size)
 
-target_model = model_architecture(input_channels=3, output_size=output_size)
+target_model = model_architecture(input_size=input_size, output_size=output_size)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(target_model.parameters(), lr=learning_rate, momentum=0.9)
@@ -446,17 +447,17 @@ def train_shadow_models_and_attack_model(target_model, X_shadow, y_shadow, num_s
         X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.5)
 
         '''For traditional ML models Only Fc'''
-        # # Convert data to PyTorch tensors
-        # X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32)
-        # y_train_tensor = torch.tensor(y_train.values, dtype=torch.long).squeeze()
-        # X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32)
-        # y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
+        # Convert data to PyTorch tensors
+        X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32)
+        y_train_tensor = torch.tensor(y_train.values, dtype=torch.long).squeeze()
+        X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32)
+        y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 
         ''''For CNNs'''
-        X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
-        y_train_tensor = torch.tensor(y_train.values, dtype=torch.long).squeeze()
-        X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
-        y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
+        # X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
+        # y_train_tensor = torch.tensor(y_train.values, dtype=torch.long).squeeze()
+        # X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
+        # y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 
 
         # Create DataLoader instances for training and testing
@@ -469,7 +470,7 @@ def train_shadow_models_and_attack_model(target_model, X_shadow, y_shadow, num_s
         input_size = num_features
         output_size = num_classes
 
-        shadow_model = model_architecture(input_channels=3, output_size=output_size)
+        shadow_model = model_architecture(input_size=input_size, output_size=output_size)
 
         # Define loss function and optimizer
         criterion = nn.CrossEntropyLoss()
