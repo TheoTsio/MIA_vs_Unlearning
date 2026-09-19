@@ -29,7 +29,7 @@ from Target_Models.target_model_3b import *
 from Target_Models.target_model_3c import *
 from Target_Models.target_model_3d import *
 import gc
-
+from utils.data_split import *
 from preprocess_data import *
 
 
@@ -45,7 +45,7 @@ def set_random_seed(seed: int = 42) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-model_architecture = TargetModel_3d
+model_architecture = TargetModel_1a
 
 
 def train_model(
@@ -333,22 +333,18 @@ Data preprocessing
 set_random_seed(42)
 
 # X, y, num_features, num_classes = get_mnist_dataset()
-# X, y, num_features, num_classes = get_cifar10_dataset()
+X, y, num_features, num_classes = get_cifar10_dataset()
 # X, y, num_features, num_classes = get_adults_dataset()
 # X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
 # X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
-X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
+# X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
 
 
 """
 Split data into Target training data, Shadow training data and data as Non Member to test the Attack model
 """
 
-# Split the data into 80% temp and 20% test
-X_temp, X_test_MIA, y_temp, y_test_MIA = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-
-# Now, split the remaining 80% data into 40% target train and 40% shadow train
-X_target, X_shadow, y_target, y_shadow = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp)
+X_target, X_shadow, y_target, y_shadow, X_test_MIA, y_test_MIA = get_target_shadow_split(X, y)
 print(X.shape)
 print(X_target.shape)
 
@@ -357,15 +353,7 @@ Train Target Model
 """
 set_random_seed(42)
 
-features = X_target
-labels = y_target
-
-# Split the data
-X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
-
-# Keep this to create a test dataset for the attack model
-X_target_train_set = X_train
-y_target_train_set = y_train
+X_train, X_test, y_train, y_test = get_train_test_split(X_target, y_target)
 
 '''For traditional ML models Only Fc'''
 # Convert data to PyTorch tensors
@@ -388,7 +376,7 @@ batch_size = 32
 early_stopping_patience = 3
 enable_early_stopping = False 
 
-# for tabular data
+# # for tabular data
 # learning_rate = 0.01
 # num_epochs = 100
 # batch_size = 32
@@ -426,6 +414,69 @@ gc.collect()
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
 # target_model = torch.load('models/dataset_target_model.pth' )
+
+
+"""
+=========================================
+Train the "Retrain Baseline" model
+(same architecture/hyperparams, but WITHOUT the forget set)
+This uses the EXACT SAME forget/retain split as the unlearning script,
+so results are directly comparable.
+=========================================
+"""
+set_random_seed(42)
+
+# --- Reproduce the identical retain/forget split used in the unlearning script ---
+X_retain, X_forget, y_retain, y_forget = get_retain_forget_split(
+    X_target_train_set, y_target_train_set, forget_class=7)  # None for Purchase/Texas/MuFac
+
+
+# Keep retain set as-is (everything NOT in the forgotten class-7 subset that was pulled into forget)
+
+print(f"Retrain baseline — Retain set size: {len(X_retain)}, Forget set size (excluded): {len(X_forget)}")
+
+'''For traditional ML models Only Fc'''
+X_retain_tensor = torch.tensor(X_retain.values, dtype=torch.float32)
+y_retain_tensor = torch.tensor(y_retain.values, dtype=torch.long).squeeze()
+
+'''For CNNs'''
+# X_retain_tensor = torch.tensor(X_retain.values, dtype=torch.float32).reshape(-1, 3, image_size, image_size)
+# y_retain_tensor = torch.tensor(y_retain.values, dtype=torch.long).squeeze()
+
+retain_train_dataset = TensorDataset(X_retain_tensor, y_retain_tensor)
+retain_train_loader = DataLoader(retain_train_dataset, batch_size=batch_size, shuffle=True)
+
+# Reuse the same held-out test set (X_test_tensor/y_test_tensor) for validation/early stopping,
+# so accuracy numbers stay comparable to the original target model.
+
+retrain_baseline_model = model_architecture(input_size=input_size, output_size=output_size)
+
+criterion_retrain = nn.CrossEntropyLoss()
+optimizer_retrain = optim.SGD(retrain_baseline_model.parameters(), lr=learning_rate, momentum=0.9)
+
+train_model(
+    retrain_baseline_model, retain_train_loader, test_loader,
+    criterion_retrain, optimizer_retrain,
+    num_epochs, early_stopping_patience, enable_early_stopping
+)
+
+rb_train_loss, rb_train_acc, rb_train_prec, rb_train_rec = evaluate_model_performance(
+    retrain_baseline_model, criterion_retrain, X_retain_tensor, y_retain_tensor)
+rb_test_loss, rb_test_acc, rb_test_prec, rb_test_rec = evaluate_model_performance(
+    retrain_baseline_model, criterion_retrain, X_test_tensor, y_test_tensor)
+
+print(f'\n[Retrain Baseline] Train Loss: {rb_train_loss:.4f}, Train Accuracy: {rb_train_acc:.4f}')
+print(f'[Retrain Baseline] Test Loss: {rb_test_loss:.4f}, Test Accuracy: {rb_test_acc:.4f}')
+
+# Save under a DIFFERENT filename — do not overwrite the original target model
+torch.save(retrain_baseline_model, 'models/dataset_retrain_baseline_model.pth')
+
+del retrain_baseline_model
+gc.collect()
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+    
+    
 """
 Train shadow models
 """

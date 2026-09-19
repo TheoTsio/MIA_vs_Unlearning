@@ -55,6 +55,7 @@ from preprocess_data import *
 from Target_Models.target_model_1a import *
 from Target_Models.target_model_1c import *
 from Target_Models.target_model_2a import *
+from utils.data_split import *
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -106,12 +107,40 @@ def create_membership_dataframe(
     return membership_df
 
 
+def evaluate_attack_model_get_stats(dataset, model):
+    """
+    Evaluates and visualizes the performance of the attack model.
+
+    Parameters:
+        dataset (pd.DataFrame): DataFrame containing features and 'membership' column.
+        attack_model (sklearn.base.ClassifierMixin): Trained attack model.
+        plot_choice (str): Type of plot to display. 'roc' for ROC curve, 'confusion' for confusion matrix.
+
+    Returns:
+        dict: Dictionary containing precision, recall, accuracy, F1 score, and confusion matrix.
+    """
+    # Extract features and labels from the dataset
+    features = dataset.drop(columns=['membership'])
+    labels = dataset['membership']
+
+    # Predict probabilities using the trained attack model
+    predictions = model.predict(features)
+    # Probabilities for the positive class
+    probabilities = model.predict_proba(features)[:, 1]
+
+    # Compute metrics
+    precision = precision_score(labels, predictions)
+    recall = recall_score(labels, predictions)
+    accuracy = model.score(features, labels)
+    f1 = f1_score(labels, predictions)
+
+    return accuracy, f1, precision, recall
 
 if __name__ == "__main__":
     # load pre-trained models
 
-    target_model = torch.load('models/3d_texas_target_model.pth')
-    attack_model = joblib.load("models/3d_texas_attack_model.jolib")
+    target_model = torch.load('models/dataset_target_model.pth')
+    attack_model = joblib.load("models/dataset_attack_model.jolib")
     
     
     """
@@ -120,10 +149,10 @@ if __name__ == "__main__":
     # load the dataset
     set_random_seed(42)
 
-    # X, y, num_features, num_classes = get_cifar10_dataset()
+    X, y, num_features, num_classes = get_cifar10_dataset()
     # X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
     # X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
-    X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
+    # X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
     print(X.shape)
 
     input_size = num_features 
@@ -133,19 +162,14 @@ if __name__ == "__main__":
     Split data into Target training data, Shadow training data and data as Non Member to test the Attack model
     """
 
-    # Split the data into 80% temp and 20% test
-    X_temp, X_test_MIA, y_temp, y_test_MIA = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-
-    # Now, split the remaining 80% data into 40% target train and 40% shadow train
-    X_target, X_shadow, y_target, y_shadow = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp)
+    X_target, X_shadow, y_target, y_shadow, X_test_MIA, y_test_MIA = get_target_shadow_split(X, y)
     print(X.shape)
     print(X_target.shape)
 
-    X_train, X_test, y_train, y_test = train_test_split(X_target, y_target, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = get_train_test_split(X_target, y_target)
 
     # Keep this to create a test dataset for the attack model
-    X_target_train_set = X_train
-    y_target_train_set = y_train
+    X_target_train_set, y_target_train_set = X_train, y_train
 
     """ 
     Run MIA during each unlearning epoch
@@ -158,9 +182,8 @@ if __name__ == "__main__":
     # Define the forget set to forget class 7
     X_retain, X_forget, y_retain, y_forget = train_test_split(X_target_train_set, y_target_train_set, test_size=0.2, random_state=42, stratify=y_target_train_set)
 
-    # # on CIFAR10 data specifically unlearn only class 7 
-    # y_forget = y_forget[y_forget['label'] == 7]
-    # X_forget = X_forget.loc[y_forget.index]
+    X_retain, X_forget, y_retain, y_forget = get_retain_forget_split(
+    X_target_train_set, y_target_train_set, forget_class=7)  # Seven in forget class for CIFAR-10, or None for full 20% forget split for Purchase/Texas/MuFac
 
 
     '''Classic For Fully Connected Models'''
@@ -187,7 +210,7 @@ if __name__ == "__main__":
     merged_loader = create_merged_loader(X_retain_tensor, y_retain_tensor, X_forget_tensor, y_forget_tensor, batch_size=32, shuffle=True)
 
     # Hyperparameters for Unlearning
-    learning_rate = 0.0000001
+    learning_rate = 0.0001
     epochs = 30
     batch_size = 32
 
@@ -222,6 +245,27 @@ if __name__ == "__main__":
     # mia_stats, accs, losses = neg_grad_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
     # mia_stats, accs, losses = sftc_unlearn_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, merged_loader=merged_loader, teacher_model=teacher_model, dummy_model=dummy_model,  X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
 
+
+    """
+    =========================================
+    Retrain-from-scratch baseline MIA (gold standard reference line)
+    =========================================
+    """
+    retrain_baseline_model = torch.load('models/dataset_retrain_baseline_model.pth')
+
+    # Forget set vs unseen
+    df_forget_baseline = create_membership_dataframe(retrain_baseline_model, forget_member_df, train_non_member_data)
+    baseline_forget_acc, baseline_forget_f1, baseline_forget_prec, baseline_forget_rec = \
+        evaluate_attack_model_get_stats(df_forget_baseline, attack_model)
+
+    # Retain set vs unseen
+    df_retain_baseline = create_membership_dataframe(retrain_baseline_model, retain_member_df, train_non_member_data)
+    baseline_retain_acc, baseline_retain_f1, baseline_retain_prec, baseline_retain_rec = \
+        evaluate_attack_model_get_stats(df_retain_baseline, attack_model)
+
+    print(f"\n[Retrain Baseline] MIA Forget Acc: {baseline_forget_acc:.4f}, MIA Retain Acc: {baseline_retain_acc:.4f}")
+    print(f"[Retrain Baseline] MIA Forget F1: {baseline_forget_f1:.4f}, MIA Retain F1: {baseline_retain_f1:.4f}")
+    
     '''
     Plots
     '''
@@ -255,6 +299,13 @@ if __name__ == "__main__":
 
     ax.plot(mia_stats['forget']['acc'], label='MIA Forget Accuracies', linestyle='-')
     ax.plot(mia_stats['retain']['acc'], label='MIA Retain Accuracies', linestyle='--')
+    
+    # Retrain-from-scratch baseline reference lines
+    ax.axhline(y=baseline_forget_acc, color='C0', linestyle=':', linewidth=1.5,
+            label='Retrain Baseline — Forget')
+    ax.axhline(y=baseline_retain_acc, color='C1', linestyle=':', linewidth=1.5,
+            label='Retrain Baseline — Retain')
+
     ax.grid(True, linestyle=':', linewidth=0.5)
     ax.minorticks_on()
     ax.grid(which='minor', linestyle=':', linewidth=0.25)
@@ -272,6 +323,11 @@ if __name__ == "__main__":
 
     ax.plot(mia_stats['forget']['f1'], label='Forget F1 Scores', linestyle='-')
     ax.plot(mia_stats['retain']['f1'], label='Retain F1 Scores', linestyle='--')
+    
+    
+    ax.axhline(y=baseline_forget_f1, color='C0', linestyle=':', linewidth=1.5, label='Retrain Baseline — Forget F1')
+    ax.axhline(y=baseline_retain_f1, color='C1', linestyle=':', linewidth=1.5, label='Retrain Baseline — Retain F1')
+
     ax.grid(True, linestyle=':', linewidth=0.5)
     ax.minorticks_on()
     ax.grid(which='minor', linestyle=':', linewidth=0.25)
@@ -342,6 +398,11 @@ if __name__ == "__main__":
         'Val Acc': accs['val'],
         'Test Acc': accs['test'],
         'Forget Acc': accs['forget'],
+        # Constant reference columns (same value every row) — easy to pull for table/plot later
+        'Retrain Baseline MIA Forget Acc': baseline_forget_acc,
+        'Retrain Baseline MIA Retain Acc': baseline_retain_acc,
+        'Retrain Baseline MIA Forget F1': baseline_forget_f1,
+        'Retrain Baseline MIA Retain F1': baseline_retain_f1,
     })
 
     # Define the CSV file name
