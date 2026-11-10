@@ -8,3 +8,4 @@ torch==2.0.1
 torchvision==0.15.2
 tqdm==4.65.0
 seaborn==0.13.2
+optuna==5.0.0

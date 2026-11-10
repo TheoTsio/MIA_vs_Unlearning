@@ -9,6 +9,7 @@ import os
 import sys
 
 image_size = 128
+image_size = 32
 
 current_dir = os.getcwd()
 sftc_unlearn_path = current_dir
@@ -53,8 +54,14 @@ from Unlearning_Functions_Tracking_MIA.neg_grad_track_mia import neg_grad_tracki
 
 from preprocess_data import *
 from Target_Models.target_model_1a import *
-from Target_Models.target_model_1c import *
 from Target_Models.target_model_2a import *
+from Target_Models.target_model_2b import *
+from Target_Models.target_model_2c import *
+from Target_Models.target_model_1c import *
+from Target_Models.target_model_3a import *
+from Target_Models.target_model_3b import *
+from Target_Models.target_model_3c import *
+from Target_Models.target_model_3d import *
 from utils.data_split import *
 
 
@@ -74,6 +81,7 @@ def set_random_seed(seed: int = 42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+set_random_seed(42)
 
 def create_membership_dataframe(
     model: nn.Module,
@@ -139,20 +147,19 @@ def evaluate_attack_model_get_stats(dataset, model):
 if __name__ == "__main__":
     # load pre-trained models
 
-    target_model = torch.load('models/dataset_target_model.pth')
-    attack_model = joblib.load("models/dataset_attack_model.jolib")
-    
-    
+    target_model = torch.load('models/1d_dataset_target_model.pth')
+    attack_model = joblib.load("models/1d_dataset_attack_model.jolib")
+
+
     """
     Data preprocessing
     """
     # load the dataset
-    set_random_seed(42)
 
-    X, y, num_features, num_classes = get_cifar10_dataset()
+    # X, y, num_features, num_classes = get_cifar10_dataset()
     # X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
     # X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
-    # X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
+    X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
     print(X.shape)
 
     input_size = num_features 
@@ -183,7 +190,7 @@ if __name__ == "__main__":
     X_retain, X_forget, y_retain, y_forget = train_test_split(X_target_train_set, y_target_train_set, test_size=0.2, random_state=42, stratify=y_target_train_set)
 
     X_retain, X_forget, y_retain, y_forget = get_retain_forget_split(
-    X_target_train_set, y_target_train_set, forget_class=7)  # Seven in forget class for CIFAR-10, or None for full 20% forget split for Purchase/Texas/MuFac
+    X_target_train_set, y_target_train_set, forget_class=None)  # Seven in forget class for CIFAR-10, or None for full 20% forget split for Purchase/Texas/MuFac
 
 
     '''Classic For Fully Connected Models'''
@@ -241,9 +248,9 @@ if __name__ == "__main__":
     num_epochs_MIA = 50
     num_shadow_models = 5
     # Unlearn the target neural network
-    mia_stats, accs, losses = scrub_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model,  unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, teacher_model=teacher_model, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
-    # mia_stats, accs, losses = neg_grad_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
-    # mia_stats, accs, losses = sftc_unlearn_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, merged_loader=merged_loader, teacher_model=teacher_model, dummy_model=dummy_model,  X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1a)
+    # mia_stats, accs, losses = scrub_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model,  unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, teacher_model=teacher_model, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1c)
+    mia_stats, accs, losses = neg_grad_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1c)
+    # mia_stats, accs, losses = sftc_unlearn_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, merged_loader=merged_loader, teacher_model=teacher_model, dummy_model=dummy_model,  X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1c)
 
 
     """
@@ -251,7 +258,7 @@ if __name__ == "__main__":
     Retrain-from-scratch baseline MIA (gold standard reference line)
     =========================================
     """
-    retrain_baseline_model = torch.load('models/dataset_retrain_baseline_model.pth')
+    retrain_baseline_model = torch.load('models/1d_dataset_retrain_baseline_model.pth')
 
     # Forget set vs unseen
     df_forget_baseline = create_membership_dataframe(retrain_baseline_model, forget_member_df, train_non_member_data)
@@ -298,13 +305,13 @@ if __name__ == "__main__":
     fig, ax = plt.subplots(figsize=(10, 6))
 
     ax.plot(mia_stats['forget']['acc'], label='MIA Forget Accuracies', linestyle='-')
-    ax.plot(mia_stats['retain']['acc'], label='MIA Retain Accuracies', linestyle='--')
+    ax.plot(mia_stats['retain']['acc'], label='MIA Retain Accuracies', linestyle='-')
     
     # Retrain-from-scratch baseline reference lines
-    ax.axhline(y=baseline_forget_acc, color='C0', linestyle=':', linewidth=1.5,
-            label='Retrain Baseline — Forget')
-    ax.axhline(y=baseline_retain_acc, color='C1', linestyle=':', linewidth=1.5,
-            label='Retrain Baseline — Retain')
+    ax.axhline(y=baseline_forget_acc, color='C0', linestyle='--', linewidth=2,
+            label='Retrain Baseline: Forget')
+    ax.axhline(y=baseline_retain_acc, color='C1', linestyle='--', linewidth=2,
+            label='Retrain Baseline: Retain')
 
     ax.grid(True, linestyle=':', linewidth=0.5)
     ax.minorticks_on()
@@ -322,11 +329,11 @@ if __name__ == "__main__":
     fig, ax = plt.subplots(figsize=(10, 6))
 
     ax.plot(mia_stats['forget']['f1'], label='Forget F1 Scores', linestyle='-')
-    ax.plot(mia_stats['retain']['f1'], label='Retain F1 Scores', linestyle='--')
+    ax.plot(mia_stats['retain']['f1'], label='Retain F1 Scores', linestyle='-')
     
     
-    ax.axhline(y=baseline_forget_f1, color='C0', linestyle=':', linewidth=1.5, label='Retrain Baseline — Forget F1')
-    ax.axhline(y=baseline_retain_f1, color='C1', linestyle=':', linewidth=1.5, label='Retrain Baseline — Retain F1')
+    ax.axhline(y=baseline_forget_f1, color='C0', linestyle='--', linewidth=2, label='Retrain Baseline: Forget F1')
+    ax.axhline(y=baseline_retain_f1, color='C1', linestyle='--', linewidth=2, label='Retrain Baseline: Retain F1')
 
     ax.grid(True, linestyle=':', linewidth=0.5)
     ax.minorticks_on()
@@ -410,3 +417,23 @@ if __name__ == "__main__":
 
     # Write to CSV
     df.to_csv(csv_file, index=False)
+
+
+
+target = torch.load('models/1a_dataset_target_model.pth')
+retrain = torch.load('models/1a_dataset_retrain_baseline_model.pth')
+results = []
+for K in [1, 3, 5, 10]:
+    for seed in [0, 1, 2]:
+        np.random.seed(seed); torch.manual_seed(seed)
+        attack = train_shadow_models_and_attack_model(
+            TargetModel_1c, X_shadow, y_shadow, K, num_features, num_classes,
+            batch_size=32, learning_rate=0.01, num_epochs=100)
+        row = {'K': K, 'seed': seed}
+        for name, model in [('target', target), ('retrain', retrain)]:
+            for split, members in [('forget', forget_member_df), ('retain', retain_member_df)]:
+                df = create_membership_dataframe(model, members, train_non_member_data)
+                row[f'{name}_{split}'] = evaluate_attack_model_get_stats(df, attack)[0]
+        results.append(row)
+import pandas as pd
+print(pd.DataFrame(results).groupby('K').agg(['mean', 'std']))

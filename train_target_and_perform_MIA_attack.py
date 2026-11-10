@@ -45,8 +45,8 @@ def set_random_seed(seed: int = 42) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-model_architecture = TargetModel_1a
-
+set_random_seed(42)
+model_architecture = TargetModel_3d
 
 def train_model(
     model: nn.Module,
@@ -333,11 +333,11 @@ Data preprocessing
 set_random_seed(42)
 
 # X, y, num_features, num_classes = get_mnist_dataset()
-X, y, num_features, num_classes = get_cifar10_dataset()
+# X, y, num_features, num_classes = get_cifar10_dataset()
 # X, y, num_features, num_classes = get_adults_dataset()
 # X, y, num_features, num_classes = get_purchase_dataset(dataset_path='data/dataset_purchase.csv', keep_rows=40_000)
 # X, y, num_features, num_classes = get_MUFAC_dataset("data/custom_korean_family_dataset_resolution_128/custom_train_dataset.csv", "data/custom_korean_family_dataset_resolution_128/train_images", percentage_of_rows_to_drop = 0.4)
-# X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
+X, y, num_features, num_classes = get_texas_100_dataset(path='data/texas100.npz', limit_rows=40_000)
 
 
 """
@@ -354,6 +354,8 @@ Train Target Model
 set_random_seed(42)
 
 X_train, X_test, y_train, y_test = get_train_test_split(X_target, y_target)
+X_target_train_set = X_train
+y_target_train_set = y_train
 
 '''For traditional ML models Only Fc'''
 # Convert data to PyTorch tensors
@@ -369,19 +371,19 @@ y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 # y_test_tensor = torch.tensor(y_test.values, dtype=torch.long).squeeze()
 
 
-# Hyperparameters for images
-learning_rate = 0.001
-num_epochs = 300
-batch_size = 32
-early_stopping_patience = 3
-enable_early_stopping = False 
-
-# # for tabular data
-# learning_rate = 0.01
-# num_epochs = 100
+# # Hyperparameters for images
+# learning_rate = 0.001
+# num_epochs = 300
 # batch_size = 32
 # early_stopping_patience = 3
-# enable_early_stopping = False
+# enable_early_stopping = False 
+
+# for tabular data
+learning_rate = 0.01
+num_epochs = 100
+batch_size = 32
+early_stopping_patience = 3
+enable_early_stopping = False
 
 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -424,16 +426,15 @@ This uses the EXACT SAME forget/retain split as the unlearning script,
 so results are directly comparable.
 =========================================
 """
-set_random_seed(42)
 
 # --- Reproduce the identical retain/forget split used in the unlearning script ---
 X_retain, X_forget, y_retain, y_forget = get_retain_forget_split(
-    X_target_train_set, y_target_train_set, forget_class=7)  # None for Purchase/Texas/MuFac
+    X_target_train_set, y_target_train_set, forget_class=None)  # None for Purchase/Texas/MuFac
 
 
 # Keep retain set as-is (everything NOT in the forgotten class-7 subset that was pulled into forget)
 
-print(f"Retrain baseline — Retain set size: {len(X_retain)}, Forget set size (excluded): {len(X_forget)}")
+print(f"Retrain baseline - Retain set size: {len(X_retain)}, Forget set size (excluded): {len(X_forget)}")
 
 '''For traditional ML models Only Fc'''
 X_retain_tensor = torch.tensor(X_retain.values, dtype=torch.float32)
@@ -457,8 +458,7 @@ optimizer_retrain = optim.SGD(retrain_baseline_model.parameters(), lr=learning_r
 train_model(
     retrain_baseline_model, retain_train_loader, test_loader,
     criterion_retrain, optimizer_retrain,
-    num_epochs, early_stopping_patience, enable_early_stopping
-)
+    num_epochs, early_stopping_patience, enable_early_stopping)
 
 rb_train_loss, rb_train_acc, rb_train_prec, rb_train_rec = evaluate_model_performance(
     retrain_baseline_model, criterion_retrain, X_retain_tensor, y_retain_tensor)

@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 
 class TargetModel_2a(nn.Module):
-    def __init__(self, input_channels=3, output_size=10):
+    def __init__(self, input_size, input_channels=3, output_size=10):
         super(TargetModel_2a, self).__init__()
         # Block 1: 3 -> 16 φίλτρα
         self.conv1 = nn.Conv2d(input_channels, 16, kernel_size=3, padding=1)
