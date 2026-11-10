@@ -63,6 +63,7 @@ from Target_Models.target_model_3b import *
 from Target_Models.target_model_3c import *
 from Target_Models.target_model_3d import *
 from utils.data_split import *
+from MIA_Threshold_Attacks import AttackSuite, load_or_calibrate_thresholds
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -147,8 +148,13 @@ def evaluate_attack_model_get_stats(dataset, model):
 if __name__ == "__main__":
     # load pre-trained models
 
-    target_model = torch.load('models/1d_dataset_target_model.pth')
-    attack_model = joblib.load("models/1d_dataset_attack_model.jolib")
+    # Experiment configuration: change these together when switching experiments
+    experiment_id = '1d'
+    target_architecture = TargetModel_3d  # architecture of the target/shadow models for this experiment
+    input_shape = None                    # (3, image_size, image_size) for CNNs, None for fully connected models
+
+    target_model = torch.load(f'models/{experiment_id}_dataset_target_model.pth')
+    attack_model = joblib.load(f"models/{experiment_id}_dataset_attack_model.jolib")
 
 
     """
@@ -185,9 +191,6 @@ if __name__ == "__main__":
     unlearned_model = copy.deepcopy(target_model)
     teacher_model = copy.deepcopy(target_model)
     dummy_model = RandomDistributionGenerator(dist='normal', dimensions=num_classes)
-
-    # Define the forget set to forget class 7
-    X_retain, X_forget, y_retain, y_forget = train_test_split(X_target_train_set, y_target_train_set, test_size=0.2, random_state=42, stratify=y_target_train_set)
 
     X_retain, X_forget, y_retain, y_forget = get_retain_forget_split(
     X_target_train_set, y_target_train_set, forget_class=None)  # Seven in forget class for CIFAR-10, or None for full 20% forget split for Purchase/Texas/MuFac
@@ -247,10 +250,31 @@ if __name__ == "__main__":
 
     num_epochs_MIA = 50
     num_shadow_models = 5
+
+    """
+    Additional MIAs: loss / confidence / modified-entropy thresholds + label-only gap attack.
+    Thresholds are calibrated on shadow models trained on X_shadow with the same recipe as the
+    target model (SGD, lr=0.01, 100 epochs, batch 32) and cached per experiment.
+    """
+    mia_thresholds = load_or_calibrate_thresholds(
+        f'models/{experiment_id}_mia_thresholds.json',
+        target_architecture, X_shadow, y_shadow, num_features, num_classes,
+        num_shadow_models=1, learning_rate=0.01, num_epochs=100, batch_size=32,
+        input_shape=input_shape, device=device)
+
+    attack_suite = AttackSuite(
+        retain_X=retain_member_df, retain_y=y_retain.loc[retain_member_df.index],
+        forget_X=forget_member_df, forget_y=y_forget.loc[forget_member_df.index],
+        non_member_X=train_non_member_data, non_member_y=y_test_MIA.loc[train_non_member_data.index],
+        thresholds=mia_thresholds, attack_model=attack_model, input_shape=input_shape, device=device)
+
+    # Reference point before unlearning
+    original_attack_stats = attack_suite.evaluate(target_model)
+
     # Unlearn the target neural network
-    # mia_stats, accs, losses = scrub_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model,  unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, teacher_model=teacher_model, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1c)
-    mia_stats, accs, losses = neg_grad_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1c)
-    # mia_stats, accs, losses = sftc_unlearn_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, merged_loader=merged_loader, teacher_model=teacher_model, dummy_model=dummy_model,  X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=TargetModel_1c)
+    # mia_stats, accs, losses = scrub_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model,  unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, teacher_model=teacher_model, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=target_architecture, attack_suite=attack_suite)
+    mia_stats, accs, losses = neg_grad_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=target_architecture, attack_suite=attack_suite)
+    # mia_stats, accs, losses = sftc_unlearn_tracking_MIA(retain_member_df, forget_member_df, train_non_member_data, attack_model, unlearned_model, retain_loader, test_loader, test_loader, forget_loader, optimizer=optimizer, scheduler=None, criterion=criterion, epochs=epochs, device=device, merged_loader=merged_loader, teacher_model=teacher_model, dummy_model=dummy_model,  X_shadow=X_shadow, y_shadow=y_shadow, num_shadow_models=num_shadow_models, num_features=num_features, num_classes=num_classes, batch_size=batch_size, learning_rate=learning_rate, num_epochs_MIA=num_epochs_MIA, shadow_model_architecture=target_architecture, attack_suite=attack_suite)
 
 
     """
@@ -258,7 +282,7 @@ if __name__ == "__main__":
     Retrain-from-scratch baseline MIA (gold standard reference line)
     =========================================
     """
-    retrain_baseline_model = torch.load('models/1d_dataset_retrain_baseline_model.pth')
+    retrain_baseline_model = torch.load(f'models/{experiment_id}_dataset_retrain_baseline_model.pth')
 
     # Forget set vs unseen
     df_forget_baseline = create_membership_dataframe(retrain_baseline_model, forget_member_df, train_non_member_data)
@@ -418,22 +442,46 @@ if __name__ == "__main__":
     # Write to CSV
     df.to_csv(csv_file, index=False)
 
+    """
+    =========================================
+    Comparison across MIA strategies (shadow RF, loss, confidence, modified entropy, label-only)
+    =========================================
+    """
+    retrain_attack_stats = attack_suite.evaluate(retrain_baseline_model)
+    attack_references = {'Retrain Baseline': retrain_attack_stats, 'Original': original_attack_stats}
 
+    attack_suite.history_dataframe(attack_references).to_csv('curves/mia_attacks_comparison.csv', index=False)
 
-target = torch.load('models/1a_dataset_target_model.pth')
-retrain = torch.load('models/1a_dataset_retrain_baseline_model.pth')
-results = []
-for K in [1, 3, 5, 10]:
-    for seed in [0, 1, 2]:
-        np.random.seed(seed); torch.manual_seed(seed)
-        attack = train_shadow_models_and_attack_model(
-            TargetModel_1c, X_shadow, y_shadow, K, num_features, num_classes,
-            batch_size=32, learning_rate=0.01, num_epochs=100)
-        row = {'K': K, 'seed': seed}
-        for name, model in [('target', target), ('retrain', retrain)]:
-            for split, members in [('forget', forget_member_df), ('retain', retain_member_df)]:
-                df = create_membership_dataframe(model, members, train_non_member_data)
-                row[f'{name}_{split}'] = evaluate_attack_model_get_stats(df, attack)[0]
-        results.append(row)
-import pandas as pd
-print(pd.DataFrame(results).groupby('K').agg(['mean', 'std']))
+    attack_summary = attack_suite.summary_table(attack_references)
+    attack_summary.to_csv('curves/mia_attacks_summary.csv', index=False)
+    print("\nMIA strategies — final epoch vs references:")
+    print(attack_summary.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+
+    attack_suite.plot('acc', 'curves/mia_attacks_accuracy.pdf', attack_references, ylabel='MIA Accuracy')
+    attack_suite.plot('auc', 'curves/mia_attacks_auc.pdf', attack_references, ylabel='MIA AUC')
+    attack_suite.plot('tpr_at_1fpr', 'curves/mia_attacks_tpr_at_1fpr.pdf', attack_references, ylabel='TPR @ 1% FPR')
+
+    """
+    =========================================
+    Shadow-model ablation: K in {1, 3, 5, 10} shadow models, 3 seeds each (slow: 57 shadow models)
+    =========================================
+    """
+    RUN_SHADOW_ABLATION = False
+    if RUN_SHADOW_ABLATION:
+        from MIA_Functions import train_shadow_models_and_attack_model
+        results = []
+        for K in [1, 3, 5, 10]:
+            for seed in [0, 1, 2]:
+                np.random.seed(seed); torch.manual_seed(seed)
+                attack = train_shadow_models_and_attack_model(
+                    target_architecture, X_shadow, y_shadow, K, num_features, num_classes,
+                    batch_size=32, learning_rate=0.01, num_epochs=100)
+                row = {'K': K, 'seed': seed}
+                for name, model in [('target', target_model), ('retrain', retrain_baseline_model)]:
+                    for split, members in [('forget', forget_member_df), ('retain', retain_member_df)]:
+                        df_ablation = create_membership_dataframe(model, members, train_non_member_data)
+                        row[f'{name}_{split}'] = evaluate_attack_model_get_stats(df_ablation, attack)[0]
+                results.append(row)
+        ablation_df = pd.DataFrame(results)
+        ablation_df.to_csv(f'curves/{experiment_id}_shadow_ablation.csv', index=False)
+        print(ablation_df.groupby('K').agg(['mean', 'std']))

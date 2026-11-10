@@ -169,6 +169,10 @@ def scrub_tracking_MIA(
         MIA_prec_forget.append(prec)
         MIA_recall_forget.append(recall)
 
+        # Additional attacks (loss / confidence / modified entropy / label-only + RF AUC)
+        if kwargs.get('attack_suite') is not None:
+            kwargs['attack_suite'].track(model)
+
         losses = {"train": train_losses_retain,
                   "val": val_losses,
                   "test": test_losses}

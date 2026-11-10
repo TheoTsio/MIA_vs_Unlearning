@@ -130,6 +130,10 @@ def get_texas_100_dataset(path='data/texas100.npz', limit_rows=None):
         features = features[:limit_rows]
         labels = labels[:limit_rows]
 
+    # Features are binary 0/1 stored as int64 (3.3 GB for the full file). Convert to float32 (the
+    # dtype the models use anyway) and copy, so the full int64 array is freed. Values are unchanged.
+    features = features.astype(np.float32)
+
     # Convert features and labels to DataFrames if they are not already
     X = pd.DataFrame(features)
 
