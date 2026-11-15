@@ -1,0 +1,15 @@
+\begin{table}[t]
+\centering
+\caption{Variability of the key configurations over 1 random seeds (mean $\pm$ std). Each seed changes the unlearning run (data order, stochastic layers) and the member/non-member evaluation sample; the trained models and data splits are fixed. Test Acc.\ and AUC are given at the selected (Best) epoch. $\Delta$ = forget-set AUC reduction from the original model (Start) to Best, with a $t$-based 95\% confidence interval for MIA-1. $^{*}$: the 95\% CI of $\Delta$ excludes 0 (one-sample $t$-test, $p<0.05$).}
+\label{tab:seeds}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l c l c cc c cc cc}
+\toprule
+ & & & & \multicolumn{3}{c}{MIA-1} & \multicolumn{2}{c}{MIA-2} & \multicolumn{2}{c}{MIA-3} \\
+\cmidrule(lr){5-7}\cmidrule(lr){8-9}\cmidrule(lr){10-11}
+Dataset & Model & Method & Test Acc. & Start & Best & $\Delta$ [95\% CI] & Best & $\Delta$ & Best & $\Delta$ \\
+\midrule
+Purchase-100 & 2c & SCRUB (1 div.) & 0.79 & 0.77 & 0.72 & 0.04 & 0.69 & 0.01 & 0.68 & 0.01 \\
+\bottomrule
+\end{tabular}}
+\end{table}

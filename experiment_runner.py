@@ -316,6 +316,12 @@ def evaluate_model(prep, model):
         metrics[f"{split}_acc"] = float((p_in.argmax(1) == y_in).mean())
         s_in = _attack_scores(prep.attack_model, p_in, y_in)
         labels = np.r_[np.ones(len(p_in)), np.zeros(len(p_out))]
+        # MIA-1 attack accuracy: the RandomForest's own member/non-member decision (same as
+        # attack_model.predict: argmax of the class probabilities, ties -> classes_[0]).
+        member_first = list(prep.attack_model.classes_).index(True) == 0
+        p_member = np.r_[s_in["mia1"], s_out["mia1"]]
+        predicted = p_member >= 0.5 if member_first else p_member > 0.5
+        metrics[f"{split}_mia1_attack_acc"] = float((predicted == labels.astype(bool)).mean())
         for a in ATTACKS:
             scores = np.r_[s_in[a], s_out[a]]
             auc = float(roc_auc_score(labels, scores))

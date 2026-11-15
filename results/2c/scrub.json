@@ -4,7 +4,7 @@
   "method": "scrub",
   "config": {
     "method": "scrub",
-    "lr": 0.0005,
+    "lr": 0.005,
     "epochs": 30,
     "batch_size": 32,
     "momentum": 0.9,
@@ -12,7 +12,7 @@
     "best_criterion": "|MIA-1 forget AUC - retr| + |test acc - retr|",
     "runner_version": 1
   },
-  "best_epoch": 2,
+  "best_epoch": null,
   "start": {
     "test_acc": 0.7903125,
     "forget_acc": 1.0,
@@ -59,39 +59,16 @@
     "retain_mia3_auc": 0.691297378540039,
     "retain_mia3_tpr1": 0.0
   },
-  "best": {
-    "epoch": 2,
-    "test_acc": 0.6984375,
-    "forget_acc": 0.868359375,
-    "forget_mia1_auc_raw": 0.5575177001953125,
-    "forget_mia1_auc": 0.5575177001953125,
-    "forget_mia1_tpr1": 0.015625,
-    "forget_mia2_auc_raw": 0.5933318328857422,
-    "forget_mia2_auc": 0.5933318328857422,
-    "forget_mia2_tpr1": 0.0,
-    "forget_mia3_auc_raw": 0.5628018951416016,
-    "forget_mia3_auc": 0.5628018951416016,
-    "forget_mia3_tpr1": 0.0,
-    "retain_acc": 0.888671875,
-    "retain_mia1_auc_raw": 0.576749496459961,
-    "retain_mia1_auc": 0.576749496459961,
-    "retain_mia1_tpr1": 0.01953125,
-    "retain_mia2_auc_raw": 0.6147533416748048,
-    "retain_mia2_auc": 0.6147533416748048,
-    "retain_mia2_tpr1": 0.0,
-    "retain_mia3_auc_raw": 0.5808012390136719,
-    "retain_mia3_auc": 0.5808012390136719,
-    "retain_mia3_tpr1": 0.0
-  },
+  "best": null,
   "final": null,
-  "diverged_at_epoch": 3,
+  "diverged_at_epoch": 1,
   "sizes": {
     "retain": 10240,
     "forget": 2560,
     "test": 3200,
     "mia_sample": 2560
   },
-  "runtime_seconds": 4.1,
+  "runtime_seconds": 1.1,
   "environment": {
     "python": "3.11.16",
     "torch": "2.0.1+cu117",
@@ -101,7 +78,7 @@
     "numpy": "1.23.2",
     "pandas": "1.5.3",
     "sklearn": "1.5.1",
-    "git_commit": "1594d05e",
+    "git_commit": "82be3a9e",
     "uncommitted_python_changes": true,
     "runner_version": 1
   }

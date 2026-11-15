@@ -4,7 +4,7 @@
   "method": "neg_grad",
   "config": {
     "method": "neg_grad",
-    "lr": 5e-05,
+    "lr": 0.005,
     "epochs": 30,
     "batch_size": 32,
     "momentum": 0.9,
@@ -12,7 +12,7 @@
     "best_criterion": "|MIA-1 forget AUC - retr| + |test acc - retr|",
     "runner_version": 1
   },
-  "best_epoch": 12,
+  "best_epoch": 1,
   "start": {
     "test_acc": 0.8,
     "forget_acc": 1.0,
@@ -60,31 +60,7 @@
     "retain_mia3_tpr1": 0.01171875
   },
   "best": {
-    "epoch": 12,
-    "test_acc": 0.7890625,
-    "forget_acc": 0.99375,
-    "forget_mia1_auc_raw": 0.749234390258789,
-    "forget_mia1_auc": 0.749234390258789,
-    "forget_mia1_tpr1": 0.02890625,
-    "forget_mia2_auc_raw": 0.7046161651611328,
-    "forget_mia2_auc": 0.7046161651611328,
-    "forget_mia2_tpr1": 0.009375,
-    "forget_mia3_auc_raw": 0.6926480865478515,
-    "forget_mia3_auc": 0.6926480865478515,
-    "forget_mia3_tpr1": 0.009375,
-    "retain_acc": 0.99453125,
-    "retain_mia1_auc_raw": 0.757043228149414,
-    "retain_mia1_auc": 0.757043228149414,
-    "retain_mia1_tpr1": 0.029296875,
-    "retain_mia2_auc_raw": 0.7060959625244141,
-    "retain_mia2_auc": 0.7060959625244141,
-    "retain_mia2_tpr1": 0.01171875,
-    "retain_mia3_auc_raw": 0.6939606475830078,
-    "retain_mia3_auc": 0.6939606475830078,
-    "retain_mia3_tpr1": 0.01171875
-  },
-  "final": {
-    "epoch": 30,
+    "epoch": 1,
     "test_acc": 0.0265625,
     "forget_acc": 0.02109375,
     "forget_mia1_auc_raw": 0.5,
@@ -107,14 +83,15 @@
     "retain_mia3_auc": 0.5,
     "retain_mia3_tpr1": 0.0
   },
-  "diverged_at_epoch": null,
+  "final": null,
+  "diverged_at_epoch": 4,
   "sizes": {
     "retain": 10240,
     "forget": 2560,
     "test": 3200,
     "mia_sample": 2560
   },
-  "runtime_seconds": 21.8,
+  "runtime_seconds": 2.2,
   "environment": {
     "python": "3.11.16",
     "torch": "2.0.1+cu117",
@@ -124,7 +101,7 @@
     "numpy": "1.23.2",
     "pandas": "1.5.3",
     "sklearn": "1.5.1",
-    "git_commit": "1594d05e",
+    "git_commit": "82be3a9e",
     "uncommitted_python_changes": true,
     "runner_version": 1
   }
