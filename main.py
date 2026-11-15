@@ -462,26 +462,26 @@ if __name__ == "__main__":
     attack_suite.plot('tpr_at_1fpr', 'curves/mia_attacks_tpr_at_1fpr.pdf', attack_references, ylabel='TPR @ 1% FPR')
 
     """
-    =========================================
-    Shadow-model ablation: K in {1, 3, 5, 10} shadow models, 3 seeds each (slow: 57 shadow models)
-    =========================================
-    """
-    RUN_SHADOW_ABLATION = False
-    if RUN_SHADOW_ABLATION:
-        from MIA_Functions import train_shadow_models_and_attack_model
-        results = []
-        for K in [1, 3, 5, 10]:
-            for seed in [0, 1, 2]:
-                np.random.seed(seed); torch.manual_seed(seed)
-                attack = train_shadow_models_and_attack_model(
-                    target_architecture, X_shadow, y_shadow, K, num_features, num_classes,
-                    batch_size=32, learning_rate=0.01, num_epochs=100)
-                row = {'K': K, 'seed': seed}
-                for name, model in [('target', target_model), ('retrain', retrain_baseline_model)]:
-                    for split, members in [('forget', forget_member_df), ('retain', retain_member_df)]:
-                        df_ablation = create_membership_dataframe(model, members, train_non_member_data)
-                        row[f'{name}_{split}'] = evaluate_attack_model_get_stats(df_ablation, attack)[0]
-                results.append(row)
-        ablation_df = pd.DataFrame(results)
-        ablation_df.to_csv(f'curves/{experiment_id}_shadow_ablation.csv', index=False)
-        print(ablation_df.groupby('K').agg(['mean', 'std']))
+    # =========================================
+    # Shadow-model ablation: K in {1, 3, 5, 10} shadow models, 3 seeds each (slow: 57 shadow models)
+    # =========================================
+    # """
+    # RUN_SHADOW_ABLATION = False
+    # if RUN_SHADOW_ABLATION:
+    #     from MIA_Functions import train_shadow_models_and_attack_model
+    #     results = []
+    #     for K in [1, 3, 5, 10]:
+    #         for seed in [0, 1, 2]:
+    #             np.random.seed(seed); torch.manual_seed(seed)
+    #             attack = train_shadow_models_and_attack_model(
+    #                 target_architecture, X_shadow, y_shadow, K, num_features, num_classes,
+    #                 batch_size=32, learning_rate=0.01, num_epochs=100)
+    #             row = {'K': K, 'seed': seed}
+    #             for name, model in [('target', target_model), ('retrain', retrain_baseline_model)]:
+    #                 for split, members in [('forget', forget_member_df), ('retain', retain_member_df)]:
+    #                     df_ablation = create_membership_dataframe(model, members, train_non_member_data)
+    #                     row[f'{name}_{split}'] = evaluate_attack_model_get_stats(df_ablation, attack)[0]
+    #             results.append(row)
+    #     ablation_df = pd.DataFrame(results)
+    #     ablation_df.to_csv(f'curves/{experiment_id}_shadow_ablation.csv', index=False)
+    #     print(ablation_df.groupby('K').agg(['mean', 'std']))
