@@ -1,0 +1,61 @@
+\begin{table}[t]
+\centering
+\caption{Balanced accuracy of the shadow-model attack (MIA-1, RandomForest decision) on forget vs. non-members and retain vs. non-members (chance = 0.50). Learning rate and epoch were selected on a disjoint selection half of the evaluation data (grid $10^{-7}$, $10^{-6}$, $10^{-5}$, $10^{-4}$, $10^{-3}$, $10^{-2}$; criterion: closest to the retrained model in MIA-1 forget AUC + test accuracy); all numbers are measured on the evaluation half. Start/Retr.: original/retrained model; Sel.: selected epoch; Final: last epoch of the selected learning rate; div.: that run diverged.}
+\label{tab:mia1_acc_heldout}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l c l c c cccccccc}
+\toprule
+ & & & & & \multicolumn{4}{c}{MIA-1 Acc. forget} & \multicolumn{4}{c}{MIA-1 Acc. retain} \\
+\cmidrule(lr){6-9}\cmidrule(lr){10-13}
+Dataset & Model & Method & lr & Ep. & Start & Retr. & Sel. & Final & Start & Retr. & Sel. & Final \\
+\midrule
+CIFAR-10 & 1a & NegGrad & $10^{-3}$ & 4 & 0.81 & 0.51 & 0.79 & div. & 0.80 & 0.82 & 0.80 & div. \\
+ &  & SCRUB & $10^{-5}$ & 26 &  &  & 0.81 & 0.81 &  &  & 0.80 & 0.80 \\
+ &  & SFTC & $10^{-3}$ & 7 &  &  & 0.49 & 0.41 &  &  & 0.72 & 0.83 \\
+\cmidrule(lr){2-13}
+ & 2a & NegGrad & $10^{-4}$ & 8 & 0.79 & 0.51 & 0.72 & div. & 0.79 & 0.81 & 0.72 & div. \\
+ &  & SCRUB & $10^{-5}$ & 6 &  &  & 0.54 & 0.52 &  &  & 0.54 & 0.63 \\
+ &  & SFTC & $10^{-3}$ & 8 &  &  & 0.47 & 0.41 &  &  & 0.70 & 0.77 \\
+\cmidrule(lr){2-13}
+ & 3a & NegGrad & $10^{-4}$ & 10 & 0.90 & 0.50 & 0.51 & 0.50 & 0.90 & 0.91 & 0.50 & 0.50 \\
+ &  & SCRUB & $10^{-4}$ & 6 &  &  & 0.50 & 0.50 &  &  & 0.51 & 0.50 \\
+ &  & SFTC & $10^{-2}$ & 3 &  &  & 0.50 & 0.42 &  &  & 0.50 & 0.81 \\
+\midrule
+MuFac & 1b & NegGrad & $10^{-2}$ & 1 & 0.89 & 0.48 & 0.62 & div. & 0.89 & 0.87 & 0.63 & div. \\
+ &  & SCRUB & $10^{-4}$ & 5 &  &  & 0.50 & 0.50 &  &  & 0.50 & 0.50 \\
+ &  & SFTC & $10^{-2}$ & 25 &  &  & 0.50 & 0.50 &  &  & 0.50 & 0.50 \\
+\cmidrule(lr){2-13}
+ & 2b & NegGrad & $10^{-3}$ & 6 & 0.88 & 0.51 & 0.73 & div. & 0.87 & 0.88 & 0.74 & div. \\
+ &  & SCRUB & $10^{-4}$ & 30 &  &  & 0.50 & 0.50 &  &  & 0.50 & 0.50 \\
+ &  & SFTC & $10^{-3}$ & 11 &  &  & 0.45 & 0.43 &  &  & 0.74 & 0.87 \\
+\cmidrule(lr){2-13}
+ & 3b & NegGrad & $10^{-4}$ & 24 & 0.90 & 0.50 & 0.52 & 0.48 & 0.90 & 0.91 & 0.56 & 0.49 \\
+ &  & SCRUB & $10^{-3}$ & 19 &  &  & 0.52 & 0.49 &  &  & 0.59 & 0.50 \\
+ &  & SFTC & $10^{-2}$ & 10 &  &  & 0.50 & 0.46 &  &  & 0.63 & 0.93 \\
+\midrule
+Purchase-100 & 1c & NegGrad & $10^{-3}$ & 1 & 0.74 & 0.51 & 0.70 & div. & 0.74 & 0.76 & 0.71 & div. \\
+ &  & SCRUB & $10^{-4}$ & 23 &  &  & 0.73 & 0.73 &  &  & 0.74 & 0.74 \\
+ &  & SFTC & $10^{-2}$ & 18 &  &  & 0.51 & 0.49 &  &  & 0.77 & 0.80 \\
+\cmidrule(lr){2-13}
+ & 2c & NegGrad & $10^{-3}$ & 20 & 0.71 & 0.51 & 0.66 & div. & 0.71 & 0.72 & 0.67 & div. \\
+ &  & SCRUB & $10^{-4}$ & 3 &  &  & 0.71 & 0.71 &  &  & 0.71 & 0.71 \\
+ &  & SFTC & $10^{-3}$ & 28 &  &  & 0.50 & 0.50 &  &  & 0.56 & 0.57 \\
+\cmidrule(lr){2-13}
+ & 3c & NegGrad & $10^{-4}$ & 6 & 0.72 & 0.49 & 0.67 & div. & 0.74 & 0.72 & 0.68 & div. \\
+ &  & SCRUB & $10^{-7}$ & 4 &  &  & 0.73 & 0.73 &  &  & 0.74 & 0.74 \\
+ &  & SFTC & $10^{-2}$ & 11 &  &  & 0.46 & 0.40 &  &  & 0.79 & 0.82 \\
+\midrule
+Texas-100 & 1d & NegGrad & $10^{-4}$ & 12 & 0.55 & 0.50 & 0.55 & 0.50 & 0.55 & 0.57 & 0.55 & 0.50 \\
+ &  & SCRUB & $10^{-3}$ & 28 &  &  & 0.55 & 0.55 &  &  & 0.56 & 0.57 \\
+ &  & SFTC & $10^{-2}$ & 25 &  &  & 0.52 & 0.53 &  &  & 0.57 & 0.59 \\
+\cmidrule(lr){2-13}
+ & 2d & NegGrad & $10^{-3}$ & 5 & 0.75 & 0.51 & 0.69 & div. & 0.75 & 0.75 & 0.69 & div. \\
+ &  & SCRUB & $10^{-4}$ & 29 &  &  & 0.75 & 0.75 &  &  & 0.75 & 0.75 \\
+ &  & SFTC & $10^{-2}$ & 10 &  &  & 0.46 & 0.40 &  &  & 0.69 & 0.74 \\
+\cmidrule(lr){2-13}
+ & 3d & NegGrad & $10^{-4}$ & 19 & 0.77 & 0.50 & 0.58 & div. & 0.78 & 0.75 & 0.58 & div. \\
+ &  & SCRUB & $10^{-6}$ & 5 &  &  & 0.77 & 0.78 &  &  & 0.78 & 0.78 \\
+ &  & SFTC & $10^{-2}$ & 9 &  &  & 0.45 & 0.39 &  &  & 0.77 & 0.83 \\
+\bottomrule
+\end{tabular}}
+\end{table}

@@ -422,6 +422,7 @@ def run_method(prep, method, lr, epochs=30, batch_size=32, momentum=0.9, results
             print(f"  [{prep.exp_id} {METHOD_NAMES[method]} lr={lr:g}] epoch {epoch:2d}/{epochs} | "
                   f"test {m['test_acc']:.3f} | forget AUC MIA-1 {m['forget_mia1_auc']:.3f} "
                   f"MIA-2 {m['forget_mia2_auc']:.3f} MIA-3 {m['forget_mia3_auc']:.3f} | "
+                  f"MIA-1 acc forget {m['forget_mia1_attack_acc']:.3f} retain {m['retain_mia1_attack_acc']:.3f} | "
                   f"{time.time() - t0:.0f}s", flush=True)
     finally:
         for mod, t in zip(modules, saved_tqdm):

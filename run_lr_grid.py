@@ -1,28 +1,29 @@
 """
 Learning-rate variation: the same logic as run_seed_repeats.py, but the learning rate changes instead of
-the seed. Every key configuration (target model x unlearning method) is run with several learning rates,
-and the script reports how much the results vary: test accuracy and the MIA-1/2/3 AUC on the forget set
-and on the retain set. Nothing is selected; every learning rate is reported.
+the seed. Every target model x unlearning method (all 36 by default) is run with several learning rates,
+and the script reports how much the results vary. Main quantity: the MIA-1 (shadow-model attack)
+ACCURACY on the forget set and on the retain set (balanced member/non-member samples, chance = 0.50).
+Also reported: test accuracy and the MIA-1/2/3 AUC. Nothing is selected; every learning rate is reported.
 
 Usage:
-    python run_lr_grid.py                                  # key configurations x LRS
-    python run_lr_grid.py --all                            # all 12 experiments x 3 methods
+    python run_lr_grid.py                                  # all 12 experiments x 3 methods x LRS
+    python run_lr_grid.py --key-only                       # only the 12 key configurations
     python run_lr_grid.py --only 2a:sftc 3b:sftc           # a subset
     python run_lr_grid.py --lrs 1e-5 1e-4 1e-3             # other learning rates
     python run_lr_grid.py --report-only                    # only rebuild tables / figures
 
 Each experiment runs in its own subprocess (data and models loaded once for all its runs). Runs are cached
 in results/lr_grid/lr_<lr>/<exp>/<method>.json (resumable). A run identical to one in results/<exp>/
-(same lr, seed, epochs, ...) is reused.
+(same lr, seed, epochs, ... and with the attack accuracy recorded) is reused.
 
 Outputs (results/lr_grid/):
     lr_runs.csv                 one row per (configuration, lr): Start / Retr. / Best / Final values
-    lr_variation.csv            per configuration, attack and set (forget / retain): value at each lr,
+    lr_variation.csv            per configuration, metric and set (forget / retain): value at each lr,
                                 mean, std, min, max and range over the learning rates
-    table_lr_grid.tex           LaTeX table: MIA-1 AUC forget / retain after the last epoch for every lr
-    fig_lr_<state>_<metric>.pdf metric vs. learning rate, one panel per configuration
-                                (metric: acc, mia1, mia2, mia3; forget = solid, retain = dashed;
-                                 state: final = last epoch, best = epoch closest to the retrained model)
+    table_lr_grid.tex           LaTeX table: MIA-1 attack accuracy forget / retain after the last epoch
+    fig_lr_final_mia1acc.pdf    MIA-1 attack accuracy vs. learning rate (forget solid, retain dashed)
+    fig_lr_<state>_<metric>.pdf the same for metric = acc (test), mia1, mia2, mia3 (AUC);
+                                state: final = last epoch, best = epoch closest to the retrained model
 """
 import argparse
 import json
@@ -41,7 +42,8 @@ LRS = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2]
 SEED, EPOCHS, BATCH_SIZE, MOMENTUM = 42, 30, 32, 0.9
 OUT_DIR = os.path.join("results", "lr_grid")
 SETS = ("forget", "retain")
-ATTACK_NAMES = {"mia1": "MIA-1", "mia2": "MIA-2", "mia3": "MIA-3"}
+ATTACK_NAMES = {"mia1acc": "MIA-1 accuracy", "mia1": "MIA-1 AUC", "mia2": "MIA-2 AUC", "mia3": "MIA-3 AUC"}
+ATTACK_KEYS = list(ATTACK_NAMES)  # mia1acc = attack accuracy of the shadow-model RandomForest
 
 
 def lr_dir(lr):
@@ -52,15 +54,20 @@ def config_for(method, lr):
     return er.run_config(method, lr, EPOCHS, BATCH_SIZE, MOMENTUM, SEED)
 
 
+def has_attack_acc(rec):
+    return rec is not None and "forget_mia1_attack_acc" in (rec.get("start") or {})
+
+
 def cached(exp_id, method, lr):
-    return er.load_cached(lr_dir(lr), exp_id, method, config_for(method, lr))
+    rec = er.load_cached(lr_dir(lr), exp_id, method, config_for(method, lr))
+    return rec if has_attack_acc(rec) else None
 
 
 def reuse_main_results(exp_id, method, lr):
     """Copy an identical run from results/<exp>/ (the main table) instead of recomputing it."""
     if cached(exp_id, method, lr) is not None:
         return True
-    if er.load_cached("results", exp_id, method, config_for(method, lr)) is None:
+    if not has_attack_acc(er.load_cached("results", exp_id, method, config_for(method, lr))):
         return False
     os.makedirs(os.path.join(lr_dir(lr), exp_id), exist_ok=True)
     for name in (f"{method}.json", f"{method}_epochs.csv"):
@@ -138,6 +145,7 @@ def collect(configs, lrs):
                 m = rec.get(state) or {}
                 row[f"{state}_acc"] = m.get("test_acc", np.nan)
                 for s in SETS:
+                    row[f"{state}_{s}_mia1acc"] = m.get(f"{s}_mia1_attack_acc", np.nan)
                     for a in er.ATTACKS:
                         row[f"{state}_{s}_{a}"] = m.get(f"{s}_{a}_auc", np.nan)
             rows.append(row)
@@ -152,7 +160,7 @@ def variation(runs, state="final"):
     for (exp_id, method), g in runs.groupby(["exp_id", "method"], sort=False):
         g = g.sort_values("lr")
         for s in SETS:
-            for a in er.ATTACKS:
+            for a in ATTACK_KEYS:
                 col = f"{state}_{s}_{a}"
                 v = g[col].dropna()
                 row = dict(exp_id=exp_id, method=method, state=state, set=s, attack=ATTACK_NAMES[a],
@@ -175,7 +183,7 @@ def make_figures(runs, configs):
     rows = int(np.ceil(len(present) / cols))
     paths = []
     for state in ("final", "best"):
-        for key in ["acc"] + list(er.ATTACKS):
+        for key in ["acc"] + ATTACK_KEYS:
             fig, axes = plt.subplots(rows, cols, figsize=(3.2 * cols, 2.6 * rows), squeeze=False)
             for ax, (exp_id, method) in zip(axes.flat, present):
                 g = runs[(runs["exp_id"] == exp_id) & (runs["method"] == method)].sort_values("lr")
@@ -194,13 +202,13 @@ def make_figures(runs, configs):
                 ax.axhline(g[lines[0][2]].iloc[0], color="grey", ls="-.", lw=0.8)
                 ax.set_xscale("log")
                 ax.set_title(f"{exp_id} {er.METHOD_NAMES[method]}", fontsize=9)
-                ax.set_ylim((0.0, 1.02) if key == "acc" else (0.45, 1.02))
+                ax.set_ylim((0.0, 1.02) if key == "acc" else (0.4, 1.02))
                 ax.grid(alpha=0.3)
             for ax in list(axes.flat)[len(present):]:
                 ax.axis("off")
             for ax in axes[-1]:
                 ax.set_xlabel("Learning rate")
-            label = "Test accuracy" if key == "acc" else f"{ATTACK_NAMES[key]} AUC"
+            label = "Test accuracy" if key == "acc" else ATTACK_NAMES[key]
             for ax in axes[:, 0]:
                 ax.set_ylabel(label)
             axes.flat[0].legend(fontsize=7, loc="best")
@@ -216,15 +224,15 @@ def make_figures(runs, configs):
 
 
 def make_table(runs, configs, lrs):
-    """MIA-1 AUC forget / retain after the last epoch for every learning rate."""
+    """MIA-1 attack accuracy forget / retain after the last epoch for every learning rate."""
     idx = runs.set_index(["exp_id", "method", "lr"])
     lr_head = " & ".join(f"$10^{{{int(round(np.log10(lr)))}}}$" if np.isclose(np.log10(lr) % 1, 0)
                          or np.isclose(np.log10(lr) % 1, 1) else f"{lr:g}" for lr in lrs)
     lines = [
         r"\begin{table}[t]",
         r"\centering",
-        rf"\caption{{Effect of the unlearning learning rate. Each cell: MIA-1 AUC on the forget set / on the "
-        rf"retain set after the last epoch ({EPOCHS} epochs, SGD with momentum {MOMENTUM}, batch size "
+        rf"\caption{{Effect of the unlearning learning rate. Each cell: MIA-1 (shadow-model attack) accuracy on the "
+        rf"forget set / on the retain set (balanced member/non-member samples, chance = 0.50) after the last epoch ({EPOCHS} epochs, SGD with momentum {MOMENTUM}, batch size "
         rf"{BATCH_SIZE}, seed {SEED}). Start and Retr.: original and retrained model. "
         r"div.: weights became inf/NaN.}",
         r"\label{tab:lr_grid}",
@@ -244,15 +252,15 @@ def make_table(runs, configs, lrs):
         if previous is not None and dataset != previous:
             lines.append(r"\midrule")
         cells = [dataset if dataset != previous else "", exp_id, er.METHOD_NAMES[method],
-                 f"{first['start_forget_mia1']:.2f} / {first['start_retain_mia1']:.2f}",
-                 f"{first['retrain_forget_mia1']:.2f} / {first['retrain_retain_mia1']:.2f}"]
+                 f"{first['start_forget_mia1acc']:.2f} / {first['start_retain_mia1acc']:.2f}",
+                 f"{first['retrain_forget_mia1acc']:.2f} / {first['retrain_retain_mia1acc']:.2f}"]
         for lr in lrs:
             if (exp_id, method, lr) not in idx.index:
                 cells.append("--")
                 continue
             r = idx.loc[(exp_id, method, lr)]
             cells.append("div." if pd.notna(r["diverged_at_epoch"])
-                         else f"{r['final_forget_mia1']:.2f} / {r['final_retain_mia1']:.2f}")
+                         else f"{r['final_forget_mia1acc']:.2f} / {r['final_retain_mia1acc']:.2f}")
         lines.append(" & ".join(cells) + r" \\")
         previous = dataset
     lines += [r"\bottomrule", r"\end{tabular}}", r"\end{table}"]
@@ -272,12 +280,12 @@ def report(configs, lrs):
         f.write(make_table(runs, configs, lrs))
     figures = make_figures(runs, configs)
 
-    view = var[(var["state"] == "final") & (var["attack"] == "MIA-1")]
+    view = var[(var["state"] == "final") & (var["attack"] == "MIA-1 accuracy")]
     cols = ["exp_id", "method", "set", "start", "retrain", "n_diverged"] + \
            [c for c in view.columns if c.startswith("lr_")] + ["std", "range"]
     with pd.option_context("display.width", 220, "display.max_rows", 200,
                            "display.float_format", "{:.2f}".format):
-        print("\nMIA-1 AUC after the last epoch, per learning rate (NaN = diverged):")
+        print("\nMIA-1 attack accuracy after the last epoch, per learning rate (NaN = diverged):")
         print(view[cols].to_string(index=False))
     print(f"\nSaved {OUT_DIR}/lr_runs.csv, lr_variation.csv, table_lr_grid.tex and "
           f"{len(figures)} figures (fig_lr_*.pdf)")
@@ -292,15 +300,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--lrs", type=float, nargs="+", default=LRS)
     parser.add_argument("--only", nargs="+", metavar="EXP:METHOD", help="e.g. 2a:sftc 3b:sftc")
-    parser.add_argument("--all", action="store_true", help="all 12 experiments x 3 methods")
+    parser.add_argument("--key-only", action="store_true",
+                        help="only the 12 key configurations of run_seed_repeats.py (default: all 36)")
     parser.add_argument("--report-only", action="store_true")
     args = parser.parse_args()
     lrs = sorted(args.lrs)
 
-    if args.all:
-        configs = [(e, m) for e in er.ALL_EXPERIMENTS for m in er.METHODS]
-    else:
+    if args.key_only:
         configs = [(e, m) for e, m, _ in KEY_CONFIGS]
+    else:
+        configs = [(e, m) for e in er.ALL_EXPERIMENTS for m in er.METHODS]
     if args.only:
         wanted = [tuple(s.split(":")) for s in args.only]
         bad = [w for w in wanted if w[0] not in er.EXPERIMENTS or w[1] not in er.METHODS]

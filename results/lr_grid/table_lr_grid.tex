@@ -1,13 +1,13 @@
 \begin{table}[t]
 \centering
-\caption{Effect of the unlearning learning rate. Each cell: MIA-1 AUC on the forget set / on the retain set after the last epoch (30 epochs, SGD with momentum 0.9, batch size 32, seed 42). Start and Retr.: original and retrained model. div.: weights became inf/NaN.}
+\caption{Effect of the unlearning learning rate. Each cell: MIA-1 (shadow-model attack) accuracy on the forget set / on the retain set (balanced member/non-member samples, chance = 0.50) after the last epoch (30 epochs, SGD with momentum 0.9, batch size 32, seed 42). Start and Retr.: original and retrained model. div.: weights became inf/NaN.}
 \label{tab:lr_grid}
 \resizebox{\textwidth}{!}{%
-\begin{tabular}{l c l c c ccc}
+\begin{tabular}{l c l c c cc}
 \toprule
-Dataset & Model & Method & Start & Retr. & $10^{-5}$ & $10^{-4}$ & $10^{-3}$ \\
+Dataset & Model & Method & Start & Retr. & $10^{-5}$ & $10^{-3}$ \\
 \midrule
-Purchase-100 & 2c & NegGrad & 0.76 / 0.76 & 0.51 / 0.78 & 0.76 / 0.75 & 0.76 / 0.75 & div. \\
+Purchase-100 & 2c & NegGrad & 0.70 / 0.70 & 0.50 / 0.72 & 0.70 / 0.70 & div. \\
 \bottomrule
 \end{tabular}}
 \end{table}
