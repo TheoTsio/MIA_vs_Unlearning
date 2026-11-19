@@ -205,8 +205,12 @@ def _features(X, input_shape):
     return t.reshape(-1, *input_shape) if input_shape is not None else t
 
 
-def prepare_experiment(exp_id: str, seed: int = 42, data_seed: int = 42, verbose: bool = True):
-    """Rebuild data splits and load the saved models for one target model (shared by all methods)."""
+def prepare_experiment(exp_id: str, seed: int = 42, data_seed: int = 42, verbose: bool = True,
+                       mia3: str = "confidence"):
+    """Rebuild data splits and load the saved models for one target model (shared by all methods).
+
+    mia3: "confidence" (max softmax probability, default) or "lira" (offline LiRA, see lira.py; needs the
+    reference models of train_lira_references.py)."""
     cfg = EXPERIMENTS[exp_id]
     shape = cfg["input_shape"]
     t0 = time.time()
@@ -253,6 +257,15 @@ def prepare_experiment(exp_id: str, seed: int = 42, data_seed: int = 42, verbose
     if hasattr(prep.attack_model, "verbose"):
         prep.attack_model.verbose = 0
 
+    prep.mia3 = mia3
+    if mia3 == "lira":
+        import lira  # imported here: lira imports this module
+        prep.lira = lira.LiraScorer(exp_id, min_refs=lira.N_REFERENCE)
+        for name, (X_s, y_s) in list(prep.mia_sets.items()) + [("non_member", prep.non_member)]:
+            prep.lira.prepare(name, X_s, y_s)
+    elif mia3 != "confidence":
+        raise ValueError(f"Unknown mia3: {mia3}")
+
     prep.start = evaluate_model(prep, prep.target_model)
     prep.retrain = evaluate_model(prep, prep.retrain_model)
 
@@ -284,6 +297,21 @@ def _probabilities(model, X_t):
     return torch.cat(out).numpy()
 
 
+@torch.no_grad()
+def _probabilities_and_phi(model, X_t, y):
+    """Probabilities exactly as _probabilities, and the LiRA score phi = z_y - logsumexp_{c!=y} z_c."""
+    model.eval()
+    probs, phis = [], []
+    y_t = torch.as_tensor(np.asarray(y), dtype=torch.long)
+    for i in range(0, len(X_t), EVAL_BATCH_SIZE):
+        z = model(X_t[i:i + EVAL_BATCH_SIZE].to(device))
+        probs.append(torch.softmax(z, dim=1).double().cpu())
+        zd, yb = z.double(), y_t[i:i + EVAL_BATCH_SIZE].to(device)
+        z_y = zd.gather(1, yb[:, None]).squeeze(1)
+        phis.append((z_y - torch.logsumexp(zd.scatter(1, yb[:, None], float("-inf")), dim=1)).cpu())
+    return torch.cat(probs).numpy(), torch.cat(phis).numpy()
+
+
 def _tpr_at_fpr(labels, scores, target_fpr=0.01):
     fpr, tpr, _ = roc_curve(labels, scores)
     ok = fpr <= target_fpr
@@ -308,13 +336,24 @@ def evaluate_model(prep, model):
     p_test = _probabilities(model, prep.X_test)
     metrics["test_acc"] = float((p_test.argmax(1) == prep.y_test.numpy()).mean())
 
+    use_lira = getattr(prep, "mia3", "confidence") == "lira"
     nm_X, nm_y = prep.non_member
-    p_out = _probabilities(model, nm_X)
+    if use_lira:
+        p_out, phi_out = _probabilities_and_phi(model, nm_X, nm_y)
+    else:
+        p_out = _probabilities(model, nm_X)
     s_out = _attack_scores(prep.attack_model, p_out, nm_y)
+    if use_lira:
+        s_out["mia3"] = prep.lira.score("non_member", phi_out)  # MIA-3 = offline LiRA
     for split, (X_in, y_in) in prep.mia_sets.items():
-        p_in = _probabilities(model, X_in)
+        if use_lira:
+            p_in, phi_in = _probabilities_and_phi(model, X_in, y_in)
+        else:
+            p_in = _probabilities(model, X_in)
         metrics[f"{split}_acc"] = float((p_in.argmax(1) == y_in).mean())
         s_in = _attack_scores(prep.attack_model, p_in, y_in)
+        if use_lira:
+            s_in["mia3"] = prep.lira.score(split, phi_in)
         labels = np.r_[np.ones(len(p_in)), np.zeros(len(p_out))]
         # MIA-1 attack accuracy: the RandomForest's own member/non-member decision (same as
         # attack_model.predict: argmax of the class probabilities, ties -> classes_[0]).
@@ -344,10 +383,14 @@ def _no_tqdm(iterable, *args, **kwargs):
     return iterable
 
 
-def run_config(method, lr, epochs, batch_size, momentum, seed):
-    return dict(method=method, lr=lr, epochs=epochs, batch_size=batch_size, momentum=momentum,
-                seed=seed, best_criterion="|MIA-1 forget AUC - retr| + |test acc - retr|",
-                runner_version=RUNNER_VERSION)
+def run_config(method, lr, epochs, batch_size, momentum, seed, mia3="confidence"):
+    config = dict(method=method, lr=lr, epochs=epochs, batch_size=batch_size, momentum=momentum,
+                  seed=seed, best_criterion="|MIA-1 forget AUC - retr| + |test acc - retr|",
+                  runner_version=RUNNER_VERSION)
+    if mia3 != "confidence":
+        import lira
+        config.update(mia3=mia3, lira_reference_models=lira.N_REFERENCE, lira_variance=lira.VARIANCE)
+    return config
 
 
 def result_path(results_dir, exp_id, method):
@@ -366,7 +409,7 @@ def load_cached(results_dir, exp_id, method, config):
 def run_method(prep, method, lr, epochs=30, batch_size=32, momentum=0.9, results_dir="results",
                verbose_algorithm=False):
     """Unlearn prep.target_model with `method`, evaluating every epoch. Saves and returns the record."""
-    config = run_config(method, lr, epochs, batch_size, momentum, prep.seed)
+    config = run_config(method, lr, epochs, batch_size, momentum, prep.seed, getattr(prep, "mia3", "confidence"))
     set_random_seed(prep.seed)  # every run starts from the same RNG state, independent of run order
 
     model = copy.deepcopy(prep.target_model).to(device)
@@ -453,7 +496,7 @@ def run_method(prep, method, lr, epochs=30, batch_size=32, momentum=0.9, results
 
 
 def run_all(experiments, methods, learning_rates, epochs=30, batch_size=32, momentum=0.9, seed=42,
-            results_dir="results", isolate=True):
+            results_dir="results", isolate=True, mia3="confidence"):
     """Run every (experiment, method) with a learning rate set; reuse cached runs with the same config.
 
     isolate=True runs each target model in its own Python subprocess, so all of its memory (datasets of
@@ -466,7 +509,7 @@ def run_all(experiments, methods, learning_rates, epochs=30, batch_size=32, mome
         failed = []
         for exp_id in experiments:
             job = dict(experiments=[exp_id], methods=methods, learning_rates=learning_rates, epochs=epochs,
-                       batch_size=batch_size, momentum=momentum, seed=seed, results_dir=results_dir)
+                       batch_size=batch_size, momentum=momentum, seed=seed, results_dir=results_dir, mia3=mia3)
             cmd = [sys.executable, "-u", "-W", "ignore", os.path.abspath(__file__), "--worker", json.dumps(job)]
             proc = sp.Popen(cmd, cwd=os.path.dirname(os.path.abspath(__file__)), stdout=sp.PIPE,
                             stderr=sp.STDOUT, text=True, bufsize=1)
@@ -488,7 +531,7 @@ def run_all(experiments, methods, learning_rates, epochs=30, batch_size=32, mome
             if lr is None:
                 print(f"[{exp_id}] {METHOD_NAMES[method]}: no learning rate set, skipped")
                 continue
-            config = run_config(method, lr, epochs, batch_size, momentum, seed)
+            config = run_config(method, lr, epochs, batch_size, momentum, seed, mia3)
             if load_cached(results_dir, exp_id, method, config) is not None:
                 print(f"[{exp_id}] {METHOD_NAMES[method]}: cached result found (lr={lr:g}), skipped")
             else:
@@ -496,7 +539,7 @@ def run_all(experiments, methods, learning_rates, epochs=30, batch_size=32, mome
         if not todo:
             continue
 
-        prep = prepare_experiment(exp_id, seed=seed)
+        prep = prepare_experiment(exp_id, seed=seed, mia3=mia3)
         failed = []
         for method, lr in todo:
             try:
@@ -577,6 +620,9 @@ def make_latex_table(results, collapse_ratio=0.25):
 
     metric_keys = ["test_acc"] + [f"forget_{a}_auc" for a in ATTACKS]
     any_diverged = any(r.get("diverged_at_epoch") for per in results.values() for r in per.values())
+    lira_runs = [r["config"] for per in results.values() for r in per.values() if r["config"].get("mia3") == "lira"]
+    mia3_text = (rf"MIA-3: offline LiRA (Carlini et al., 2022) with {lira_runs[0]['lira_reference_models']} "
+                 r"reference models." if lira_runs else None)
     lines = [
         r"% Requires: \usepackage{booktabs,multirow,graphicx,rotating}",
         r"% Generated by experiment_runner.make_latex_table. Rows: Dataset -> Target model ID (Table 1) -> method.",
@@ -593,7 +639,8 @@ def make_latex_table(results, collapse_ratio=0.25):
         r"epoch in parentheses), and after the last unlearning epoch (Final). Start and Retr. do not depend on",
         r"the unlearning method and are therefore given once per target model. MIA-2 and MIA-3 are evaluated at",
         r"the same epochs as MIA-1. AUC is reported as $\max(\mathrm{AUC}, 1-\mathrm{AUC})$.",
-        r"MIA-1: shadow-model attack (Section~5.2); MIA-2: loss-threshold attack; MIA-3: confidence-based attack."
+        r"MIA-1: shadow-model attack (Section~5.2); MIA-2: loss-threshold attack; "
+        + (mia3_text if mia3_text else r"MIA-3: confidence-based attack.")
         + (r" div.: unlearning diverged (inf/NaN weights) before the last epoch." if any_diverged else "") + "}",
         r"\label{tab:utility_mia_all}",
         r"\resizebox{\textwidth}{!}{%",

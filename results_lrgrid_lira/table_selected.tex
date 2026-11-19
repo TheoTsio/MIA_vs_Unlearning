@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\caption{Test accuracy and forget-set MIA AUC, max(AUC, 1-AUC); MIA-1: shadow-model attack, MIA-2: loss-threshold attack, MIA-3: offline LiRA (Carlini et al., 2022) with 16 reference models, also reported as TPR at 1\% FPR. Learning rate and epoch were selected on a disjoint selection half of the evaluation data (grid $10^{-7}$, $10^{-6}$, $10^{-5}$, $10^{-4}$, $10^{-3}$, $10^{-2}$; criterion: closest to the retrained model in MIA-1 forget AUC + test accuracy); all numbers are measured on the evaluation half. The MIAs are evaluated after every unlearning epoch. Start/Retr.: original/retrained model; Sel.: selected epoch; Final: last epoch of the selected learning rate; div.: that run diverged.}
+\label{tab:utility_mia_heldout}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l c l c c cccccccccccccccccccc}
+\toprule
+ & & & & & \multicolumn{4}{c}{Test Acc.} & \multicolumn{4}{c}{MIA-1 AUC} & \multicolumn{4}{c}{MIA-2 AUC} & \multicolumn{4}{c}{MIA-3 (LiRA) AUC} & \multicolumn{4}{c}{MIA-3 (LiRA) TPR@1\%FPR} \\
+\cmidrule(lr){6-9}\cmidrule(lr){10-13}\cmidrule(lr){14-17}\cmidrule(lr){18-21}\cmidrule(lr){22-25}
+Dataset & Model & Method & lr & Ep. & Start & Retr. & Sel. & Final & Start & Retr. & Sel. & Final & Start & Retr. & Sel. & Final & Start & Retr. & Sel. & Final & Start & Retr. & Sel. & Final \\
+\midrule
+Purchase-100 & 2c & NegGrad & $10^{-3}$ & 20 & 0.79 & 0.78 & 0.78 & div. & 0.77 & 0.52 & 0.70 & div. & 0.71 & 0.52 & 0.70 & div. & 0.75 & 0.51 & 0.74 & div. & 0.03 & 0.01 & 0.03 & div. \\
+ &  & SCRUB & $10^{-4}$ & 3 &  &  & 0.79 & 0.79 &  &  & 0.77 & 0.77 &  &  & 0.71 & 0.71 &  &  & 0.75 & 0.75 &  &  & 0.03 & 0.03 \\
+ &  & SFTC & $10^{-3}$ & 28 &  &  & 0.73 & 0.73 &  &  & 0.54 & 0.54 &  &  & 0.65 & 0.65 &  &  & 0.61 & 0.61 &  &  & 0.03 & 0.03 \\
+\bottomrule
+\end{tabular}}
+\end{table}

@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\caption{Balanced accuracy of the shadow-model attack (MIA-1, RandomForest decision) on forget vs. non-members and retain vs. non-members (chance = 0.50). Learning rate and epoch were selected on a disjoint selection half of the evaluation data (grid $10^{-7}$, $10^{-6}$, $10^{-5}$, $10^{-4}$, $10^{-3}$, $10^{-2}$; criterion: closest to the retrained model in MIA-1 forget AUC + test accuracy); all numbers are measured on the evaluation half. The MIAs are evaluated after every unlearning epoch. Start/Retr.: original/retrained model; Sel.: selected epoch; Final: last epoch of the selected learning rate; div.: that run diverged.}
+\label{tab:mia1_acc_heldout}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l c l c c cccccccc}
+\toprule
+ & & & & & \multicolumn{4}{c}{MIA-1 Acc. forget} & \multicolumn{4}{c}{MIA-1 Acc. retain} \\
+\cmidrule(lr){6-9}\cmidrule(lr){10-13}
+Dataset & Model & Method & lr & Ep. & Start & Retr. & Sel. & Final & Start & Retr. & Sel. & Final \\
+\midrule
+Purchase-100 & 2c & NegGrad & $10^{-3}$ & 20 & 0.71 & 0.51 & 0.66 & div. & 0.71 & 0.72 & 0.67 & div. \\
+ &  & SCRUB & $10^{-4}$ & 3 &  &  & 0.71 & 0.71 &  &  & 0.71 & 0.71 \\
+ &  & SFTC & $10^{-3}$ & 28 &  &  & 0.50 & 0.50 &  &  & 0.56 & 0.57 \\
+\bottomrule
+\end{tabular}}
+\end{table}

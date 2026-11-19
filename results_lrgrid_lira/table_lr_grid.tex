@@ -1,0 +1,14 @@
+\begin{table}[t]
+\centering
+\caption{Learning-rate search. Every method and target model was run with the same grid ($10^{-7}$, $10^{-6}$, $10^{-5}$, $10^{-4}$, $10^{-3}$, $10^{-2}$; 30 epochs, SGD with momentum 0.9, batch size 32, seed 42). The evaluation data were split into disjoint selection and evaluation halves. For every learning rate the epoch is chosen on the selection half ($\min |\mathrm{AUC}_{\text{MIA-1}} - \mathrm{AUC}^{\text{retr}}| + |\mathrm{Acc} - \mathrm{Acc}^{\text{retr}}|$); each cell gives the MIA-1 forget AUC / test accuracy of that epoch on the evaluation half, with the epoch in parentheses. Bold: learning rate selected on the selection half. $^{\dagger}$: diverged later in the run; div.: diverged in the first epoch.}
+\label{tab:lr_grid}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l c l cccccc}
+\toprule
+Dataset & Model & Method & $10^{-7}$ & $10^{-6}$ & $10^{-5}$ & $10^{-4}$ & $10^{-3}$ & $10^{-2}$ \\
+\midrule
+Purchase-100 & 2c & NegGrad & 0.77 / 0.79 (1) & 0.77 / 0.79 (2) & 0.77 / 0.79 (27) & 0.77 / 0.79 (25) & \textbf{0.70 / 0.78 (20)$^{\dagger}$} & 0.73 / 0.78 (2)$^{\dagger}$ \\
+ &  & SFTC & 0.77 / 0.79 (1) & 0.76 / 0.79 (29) & 0.70 / 0.77 (30) & 0.57 / 0.74 (28) & \textbf{0.54 / 0.73 (28)} & 0.51 / 0.71 (8) \\
+\bottomrule
+\end{tabular}}
+\end{table}

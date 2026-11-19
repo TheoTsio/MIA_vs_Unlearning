@@ -3,7 +3,8 @@ Learning-rate grid with separated selection and evaluation (reviewer response).
 
 For every target model (1a ... 3d) x unlearning method (NegGrad, SCRUB, SFTC) x learning rate in the fixed
 grid LR_GRID, unlearn for 30 epochs (seed 42) and evaluate every epoch on two DISJOINT halves of the
-evaluation data:
+evaluation data. Attacks: MIA-1 shadow-model RandomForest, MIA-2 loss threshold, MIA-3 offline LiRA
+(lira.py; needs the reference models of train_lira_references.py).
 
     selection half   used only to choose the learning rate and the epoch
     evaluation half  used only for every reported number
@@ -22,7 +23,7 @@ Reported: the evaluation-half metrics of (lr*, epoch*) ("Sel."), and of the last
 for the sensitivity table and figures.
 
 Metrics per half (forget-vs-non-members and retain-vs-non-members): test accuracy, forget/retain
-classification accuracy, MIA-1/2/3 AUC (raw and max(AUC, 1-AUC)), TPR@1%FPR, and the balanced accuracy of
+classification accuracy, MIA-1/2/3 AUC (raw and max(AUC, 1-AUC)), TPR@1% and @0.1% FPR, and the balanced accuracy of
 MIA-1 using the RandomForest's own decision (attack_model.predict).
 
 Usage:
@@ -30,12 +31,12 @@ Usage:
     python lr_grid_runner.py --experiments 2c --methods neg_grad
     python lr_grid_runner.py --report-only
 
-Outputs (results_lrgrid/):
+Outputs (results_lrgrid_lira/):
     runs/<exp>/<method>/lr_<lr>.json (+ _epochs.csv)   every run, both halves, every epoch (cache; resumable)
     grid_epochs.csv        every (exp, method, lr, epoch): selection- and evaluation-half metrics
     grid_per_lr.csv        every (exp, method, lr): selection-half best epoch, evaluation-half metrics
     selection.csv          every (exp, method): selected lr / epoch and evaluation-half metrics
-    table_selected.tex     main table (evaluation half): Test Acc. and MIA-1/2/3 AUC, Start/Retr./Sel./Final
+    table_selected.tex     main table (evaluation half): Test Acc., MIA-1/2 AUC, MIA-3 (LiRA) AUC and TPR@1%FPR
     table_selected_mia1acc.tex   MIA-1 balanced accuracy, forget and retain, Start/Retr./Sel./Final
     table_lr_grid.tex      appendix: search range, per-lr results and the selected value of every configuration
     fig_sensitivity_<method>_<metric>_<state>.pdf      evaluation-half metric vs. learning rate
@@ -60,6 +61,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
 import experiment_runner as er
+import lira
 from preprocess_data import create_merged_loader
 from utils.unlearning_utils import RandomDistributionGenerator
 
@@ -70,8 +72,10 @@ LR_GRID = [1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2]
 SEED = 42          # unlearning seed and MIA sample draw (as in experiment_runner)
 SPLIT_SEED = 42    # selection / evaluation split
 EPOCHS, BATCH_SIZE, MOMENTUM = 30, 32, 0.9
-OUT_DIR = "results_lrgrid"
-GRID_VERSION = 1   # bump when evaluation logic changes, to invalidate cached runs
+OUT_DIR = "results_lrgrid_lira"   # results_lrgrid/ = first grid (MIA-3 = max confidence), kept unchanged
+GRID_VERSION = 2   # bump when evaluation logic changes, to invalidate cached runs (2: MIA-3 = LiRA)
+ATTACKS = ["mia1", "mia2", "lira"]   # MIA-1 shadow-model RF, MIA-2 loss, MIA-3 offline LiRA
+ATTACK_LABELS = {"mia1": "MIA-1", "mia2": "MIA-2", "lira": "MIA-3 (LiRA)"}
 HALVES = ("sel", "eval")
 SETS = ("forget", "retain")
 SELECTION_CRITERION = ("argmin over (lr, epoch) of |MIA-1 forget AUC - retr| + |test acc - retr| "
@@ -100,18 +104,37 @@ def add_halves(prep):
     for pool, labels in pools.items():
         prep.halves["sel"][pool], prep.halves["eval"][pool] = split_half(labels)
     prep.half_sizes = {h: {p: int(len(i)) for p, i in prep.halves[h].items()} for h in HALVES}
+    prep.lira = lira.LiraScorer(prep.exp_id, min_refs=lira.N_REFERENCE)
+    for name, (X, y) in list(prep.mia_sets.items()) + [("non_member", prep.non_member)]:
+        prep.lira.prepare(name, X, y)
     return prep
 
 
 _PREDICT_CHECKED = set()
 
 
-def _scores_and_decision(attack_model, probs, y):
-    """MIA-1/2/3 scores (as experiment_runner._attack_scores) and the RF's own member decision.
+@torch.no_grad()
+def _forward(model, X, y):
+    """Softmax probabilities exactly as experiment_runner._probabilities, and the LiRA phi from the same logits."""
+    model.eval()
+    probs, phis = [], []
+    y_t = torch.as_tensor(np.asarray(y), dtype=torch.long)
+    for i in range(0, len(X), er.EVAL_BATCH_SIZE):
+        z = model(X[i:i + er.EVAL_BATCH_SIZE].to(er.device))
+        probs.append(torch.softmax(z, dim=1).double().cpu())
+        zd, yb = z.double(), y_t[i:i + er.EVAL_BATCH_SIZE].to(er.device)
+        z_y = zd.gather(1, yb[:, None]).squeeze(1)
+        phis.append((z_y - torch.logsumexp(zd.scatter(1, yb[:, None], float("-inf")), dim=1)).cpu())
+    return torch.cat(probs).numpy(), torch.cat(phis).numpy()
+
+
+def _scores_and_decision(prep, pool, probs, phi, y):
+    """MIA-1 (RF P(member)), MIA-2 (log p_y) and MIA-3 (LiRA) scores, and the RF's own member decision.
 
     The RF is run once: predict() of a RandomForestClassifier is classes_[argmax(predict_proba)], so the
     decision is taken from the same probabilities. This is checked against attack_model.predict once.
     """
+    attack_model = prep.attack_model
     proba = attack_model.predict_proba(pd.DataFrame(probs))
     classes = np.asarray(attack_model.classes_)
     decision = classes.take(np.argmax(proba, axis=1)).astype(bool)
@@ -120,7 +143,8 @@ def _scores_and_decision(attack_model, probs, y):
             "RF decision from predict_proba differs from attack_model.predict"
         _PREDICT_CHECKED.add(id(attack_model))
     p_y = np.clip(probs[np.arange(len(y)), y], 1e-12, 1.0)
-    scores = {"mia1": proba[:, list(classes).index(True)], "mia2": np.log(p_y), "mia3": probs.max(axis=1)}
+    scores = {"mia1": proba[:, list(classes).index(True)], "mia2": np.log(p_y),
+              "lira": prep.lira.score(pool, phi)}
     return scores, decision
 
 
@@ -130,13 +154,13 @@ def evaluate_halves(prep, model):
     test_correct = p_test.argmax(1) == prep.y_test.numpy()
 
     nm_X, nm_y = prep.non_member
-    p_out = er._probabilities(model, nm_X)
-    s_out, member_out = _scores_and_decision(prep.attack_model, p_out, nm_y)
+    p_out, phi_out = _forward(model, nm_X, nm_y)
+    s_out, member_out = _scores_and_decision(prep, "non_member", p_out, phi_out, nm_y)
 
     per_set = {}
     for split, (X_in, y_in) in prep.mia_sets.items():
-        p_in = er._probabilities(model, X_in)
-        scores, decision = _scores_and_decision(prep.attack_model, p_in, y_in)
+        p_in, phi_in = _forward(model, X_in, y_in)
+        scores, decision = _scores_and_decision(prep, split, p_in, phi_in, y_in)
         per_set[split] = dict(correct=p_in.argmax(1) == y_in, scores=scores, member_pred=decision)
 
     out = {}
@@ -148,12 +172,13 @@ def evaluate_halves(prep, model):
             d, mem = per_set[split], idx[split]
             m[f"{split}_acc"] = float(d["correct"][mem].mean())
             labels = np.r_[np.ones(len(mem)), np.zeros(len(nm))]
-            for a in er.ATTACKS:
+            for a in ATTACKS:
                 scores = np.r_[d["scores"][a][mem], s_out[a][nm]]
                 auc = float(roc_auc_score(labels, scores))
                 m[f"{split}_{a}_auc_raw"] = auc
                 m[f"{split}_{a}_auc"] = max(auc, 1 - auc)
-                m[f"{split}_{a}_tpr1"] = er._tpr_at_fpr(labels, scores)
+                m[f"{split}_{a}_tpr1"] = er._tpr_at_fpr(labels, scores, 0.01)
+                m[f"{split}_{a}_tpr01"] = er._tpr_at_fpr(labels, scores, 0.001)
             predicted = np.r_[d["member_pred"][mem], member_out[nm]]
             m[f"{split}_mia1_bacc"] = float(balanced_accuracy_score(labels.astype(bool), predicted))
         out[h] = m
@@ -171,7 +196,8 @@ def distance(m, ref):
 
 def run_config(method, lr):
     return dict(method=method, lr=lr, epochs=EPOCHS, batch_size=BATCH_SIZE, momentum=MOMENTUM, seed=SEED,
-                split_seed=SPLIT_SEED, grid_version=GRID_VERSION, runner_version=er.RUNNER_VERSION)
+                split_seed=SPLIT_SEED, grid_version=GRID_VERSION, runner_version=er.RUNNER_VERSION,
+                lira_reference_models=lira.N_REFERENCE, lira_variance=lira.VARIANCE)
 
 
 def run_path(exp_id, method, lr):
@@ -236,8 +262,9 @@ def run_one(prep, method, lr):
             m = evaluate_halves(prep, model)
             history.append(dict(epoch=epoch, **m))
             s, e = m["sel"], m["eval"]
-            print(f"  {tag} epoch {epoch:2d}/{EPOCHS} | test {e['test_acc']:.3f} | eval: MIA-1 AUC forget "
-                  f"{e['forget_mia1_auc']:.3f}, MIA-1 acc forget {e['forget_mia1_bacc']:.3f} retain "
+            print(f"  {tag} epoch {epoch:2d}/{EPOCHS} | test {e['test_acc']:.3f} | eval: forget AUC MIA-1 "
+                  f"{e['forget_mia1_auc']:.3f} LiRA {e['forget_lira_auc']:.3f}, MIA-1 acc forget "
+                  f"{e['forget_mia1_bacc']:.3f} retain "
                   f"{e['retain_mia1_bacc']:.3f} | sel distance {distance(s, prep.retrain2['sel']):.3f} | "
                   f"{time.time() - t0:.0f}s", flush=True)
     finally:
@@ -275,19 +302,30 @@ def flat_history(rec):
 # Running (one subprocess per experiment: data and models loaded once, memory freed afterwards)
 # ---------------------------------------------------------------------------
 
-def worker(exp_id, methods):
-    todo = [(m, lr) for m in methods for lr in LR_GRID if load_run(exp_id, m, lr) is None]
+def lrs_for(exp_id, method, learning_rates=None):
+    """The learning rates to run / report: the whole grid, or the one fixed rate of LEARNING_RATES."""
+    if learning_rates is None:
+        return LR_GRID
+    lr = learning_rates.get(exp_id, {}).get(method)
+    return [] if lr is None else [lr]
+
+
+def worker(exp_id, methods, learning_rates=None):
+    todo = [(m, lr) for m in methods for lr in lrs_for(exp_id, m, learning_rates)
+            if load_run(exp_id, m, lr) is None]
     if not todo:
-        print(f"[{exp_id}] all grid runs cached", flush=True)
+        print(f"[{exp_id}] all runs cached", flush=True)
         return
     prep = add_halves(er.prepare_experiment(exp_id, seed=SEED))
     prep.start2 = evaluate_halves(prep, prep.target_model)
     prep.retrain2 = evaluate_halves(prep, prep.retrain_model)
+    print(f"  LiRA: {prep.lira.n_reference} reference models, {prep.lira.variance} variance", flush=True)
     for h, name in (("sel", "selection"), ("eval", "evaluation")):
         s, r = prep.start2[h], prep.retrain2[h]
-        print(f"  {name} half {prep.half_sizes[h]}: original MIA-1 AUC forget {s['forget_mia1_auc']:.3f} "
-              f"acc {s['forget_mia1_bacc']:.3f} | retrained MIA-1 AUC forget {r['forget_mia1_auc']:.3f} "
-              f"acc {r['forget_mia1_bacc']:.3f}", flush=True)
+        print(f"  {name} half {prep.half_sizes[h]}: original forget AUC MIA-1 {s['forget_mia1_auc']:.3f} "
+              f"MIA-2 {s['forget_mia2_auc']:.3f} LiRA {s['forget_lira_auc']:.3f} (TPR@1%FPR "
+              f"{s['forget_lira_tpr1']:.3f}) | retrained MIA-1 {r['forget_mia1_auc']:.3f} MIA-2 "
+              f"{r['forget_mia2_auc']:.3f} LiRA {r['forget_lira_auc']:.3f}", flush=True)
     failed = []
     for i, (method, lr) in enumerate(todo, 1):
         print(f"[{exp_id}] run {i}/{len(todo)}: {er.METHOD_NAMES[method]} lr={lr:g}", flush=True)
@@ -303,10 +341,11 @@ def worker(exp_id, methods):
         raise SystemExit(1)
 
 
-def run(experiments, methods):
+def run(experiments, methods, learning_rates=None):
+    """learning_rates=None: the whole LR_GRID. A dict {exp: {method: lr}}: only that lr per configuration."""
     failed = []
     for exp_id in experiments:
-        job = dict(exp_id=exp_id, methods=methods)
+        job = dict(exp_id=exp_id, methods=methods, learning_rates=learning_rates)
         cmd = [sys.executable, "-u", "-W", "ignore", os.path.abspath(__file__), "--worker", json.dumps(job)]
         proc = subprocess.Popen(cmd, cwd=os.path.dirname(os.path.abspath(__file__)), stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -325,9 +364,9 @@ def run(experiments, methods):
 # Selection and report
 # ---------------------------------------------------------------------------
 
-REPORT_KEYS = (["test_acc"] + [f"forget_{a}_auc" for a in er.ATTACKS] + [f"retain_{a}_auc" for a in er.ATTACKS]
-               + [f"{s}_mia1_bacc" for s in SETS] + [f"forget_{a}_tpr1" for a in er.ATTACKS]
-               + ["forget_acc", "retain_acc"])
+REPORT_KEYS = (["test_acc"] + [f"forget_{a}_auc" for a in ATTACKS] + [f"retain_{a}_auc" for a in ATTACKS]
+               + [f"{s}_mia1_bacc" for s in SETS] + [f"forget_{a}_tpr1" for a in ATTACKS]
+               + [f"forget_{a}_tpr01" for a in ATTACKS] + ["forget_acc", "retain_acc"])
 
 
 def best_epoch_on_selection(rec):
@@ -339,11 +378,11 @@ def best_epoch_on_selection(rec):
     return min(candidates, key=lambda h: (distance(h["sel"], ref), h["epoch"]))
 
 
-def collect(experiments, methods):
+def collect(experiments, methods, learning_rates=None):
     per_lr, selected, epochs, missing = [], [], [], []
     for exp_id in experiments:
         for method in methods:
-            recs = {lr: load_run(exp_id, method, lr) for lr in LR_GRID}
+            recs = {lr: load_run(exp_id, method, lr) for lr in lrs_for(exp_id, method, learning_rates)}
             missing += [(exp_id, method, lr) for lr, r in recs.items() if r is None]
             recs = {lr: r for lr, r in recs.items() if r is not None}
             if not recs:
@@ -536,8 +575,77 @@ def make_figures(per_lr, methods):
     return paths
 
 
-def report(experiments, methods):
-    per_lr, sel, epochs = collect(experiments, methods)
+COLLAPSE_ACC = 0.10  # Best / Final test accuracies below this are bolded (collapsed model)
+
+
+def make_paper_table(sel, selection_note=None):
+    """The paper table (tab:utility_mia_all) in its original layout, one block per target model with the three
+    methods stacked: Test Acc., MIA-1, MIA-2 and MIA-3 (LiRA) AUC, each Start / Retr. / Best / Final.
+    Evaluation half only; Best = epoch chosen on the selection half (in parentheses after the method)."""
+    def num(v):
+        return "--" if v is None or not np.isfinite(v) else f"{v:.2f}"
+
+    def stack(values, align="c"):
+        return rf"\begin{{tabular}}[c]{{@{{}}{align}@{{}}}}" + r" \\ ".join(values) + r"\end{tabular}"
+
+    groups = [("Test Acc.", "test_acc"), ("MIA-1 AUC", "forget_mia1_auc"), ("MIA-2 AUC", "forget_mia2_auc"),
+              ("MIA-3 AUC", "forget_lira_auc")]
+    lines = [
+        r"% Requires: \usepackage{booktabs,graphicx}. Generated by lr_grid_runner.make_paper_table.",
+        r"\begin{table*}[t]", r"\centering",
+        r"\caption{Test accuracy and forget-set MIA AUC, $\max(\mathrm{AUC}, 1-\mathrm{AUC})$, for all 12 target "
+        r"models and the three unlearning methods. Start: original model; Retr.: model retrained from scratch on "
+        r"the retain set; Best: epoch closest to the retrained model (epoch in parentheses); Final: last epoch "
+        rf"({EPOCHS}). MIA-1: shadow-model attack; MIA-2: loss-threshold attack; MIA-3: offline LiRA "
+        rf"\citep{{carlini2022membership}} with {lira.N_REFERENCE} reference models. The MIAs are evaluated after "
+        r"every unlearning epoch. "
+        + (selection_note or r"The learning rate (Table~\ref{tab:lr_grid}) and the Best epoch were selected "
+           r"on a selection half of the evaluation data; all reported values are measured on the disjoint "
+           r"evaluation half. ")
+        + r"div.: the run diverged before the last epoch. Bold: test accuracy below "
+        rf"{COLLAPSE_ACC:.2f} (collapsed model).}}",
+        r"\label{tab:utility_mia_all}", r"\resizebox{\textwidth}{!}{%",
+        r"\begin{tabular}{l c l cccc cccc cccc cccc}", r"\toprule",
+        r" & & & " + " & ".join(rf"\multicolumn{{4}}{{c}}{{{g}}}" for g, _ in groups) + r" \\",
+        "".join(rf"\cmidrule(lr){{{4 + 4 * i}-{7 + 4 * i}}}" for i in range(len(groups))),
+        r"Dataset & Model & Method & " + " & ".join(["Start & Retr. & Best & Final"] * len(groups)) + r" \\",
+        r"\midrule"]
+    by_key = {(r["exp_id"], r["method"]): r for _, r in sel.iterrows()}
+    for d_i, (dataset, exps) in enumerate(er.TABLE_LAYOUT):
+        present = [e for e in exps if any((e, m) in by_key for m in er.METHODS)]
+        for e_i, exp_id in enumerate(present):
+            rows = [by_key.get((exp_id, m)) for m in er.METHODS]
+            first = next(r for r in rows if r is not None)
+            methods = [er.METHOD_NAMES[m] + (f" ({int(r['selected_epoch'])})" if r is not None
+                       and pd.notna(r.get("selected_epoch")) else "") for m, r in zip(er.METHODS, rows)]
+            name = er.DATASET_NAMES[er.EXPERIMENTS[exp_id]["dataset"]]
+            cells = [name if e_i == len(present) // 2 else "", exp_id, stack(methods, "l")]
+            for _, k in groups:
+                best, final = [], []
+                for r in rows:
+                    if r is None or pd.isna(r.get("selected_epoch")):
+                        best.append("--"); final.append("--" if r is None else "div.")
+                        continue
+                    b = r[f"sel_{k}"]
+                    f = "div." if pd.notna(r["diverged_at_epoch"]) else r[f"final_{k}"]
+                    bold = lambda v: (rf"\textbf{{{num(v)}}}" if k == "test_acc" and isinstance(v, float)
+                                      and np.isfinite(v) and v < COLLAPSE_ACC else num(v) if not isinstance(v, str) else v)
+                    best.append(bold(b)); final.append(bold(f))
+                cells += [num(first[f"start_eval_{k}"]), num(first[f"retr_eval_{k}"]), stack(best), stack(final)]
+            lines.append(" & ".join(cells) + r" \\")
+            if e_i < len(present) - 1:
+                lines.append(r"\cmidrule(lr){2-19}")
+        if present:
+            lines.append(r"\midrule" if d_i < len(er.TABLE_LAYOUT) - 1 else r"\bottomrule")
+    if lines[-1] == r"\midrule":
+        lines[-1] = r"\bottomrule"
+    lines += [r"\end{tabular}}", r"\end{table*}"]
+    return "\n".join(lines) + "\n"
+
+
+def report(experiments, methods, learning_rates=None):
+    """learning_rates=None: grid mode (lr and epoch selected). Dict: the lr is fixed, only the epoch is selected."""
+    per_lr, sel, epochs = collect(experiments, methods, learning_rates)
     if per_lr.empty:
         print("No finished runs yet.")
         return
@@ -549,21 +657,30 @@ def report(experiments, methods):
     note = (r"Learning rate and epoch were selected on a disjoint selection half of the evaluation data "
             rf"(grid {', '.join(_lr_tex(l) for l in LR_GRID)}; criterion: closest to the retrained model in "
             r"MIA-1 forget AUC + test accuracy); all numbers are measured on the evaluation half. "
+            r"The MIAs are evaluated after every unlearning epoch. "
             r"Start/Retr.: original/retrained model; Sel.: selected epoch; Final: last epoch of the selected "
             r"learning rate; div.: that run diverged.")
     with open(os.path.join(OUT_DIR, "table_selected.tex"), "w") as f:
         f.write(make_selected_table(
             sel, [("Test Acc.", "test_acc"), ("MIA-1 AUC", "forget_mia1_auc"),
-                  ("MIA-2 AUC", "forget_mia2_auc"), ("MIA-3 AUC", "forget_mia3_auc")],
-            "Test accuracy and forget-set MIA AUC, max(AUC, 1-AUC). " + note, "tab:utility_mia_heldout"))
+                  ("MIA-2 AUC", "forget_mia2_auc"), ("MIA-3 (LiRA) AUC", "forget_lira_auc"),
+                  ("MIA-3 (LiRA) TPR@1\\%FPR", "forget_lira_tpr1")],
+            "Test accuracy and forget-set MIA AUC, max(AUC, 1-AUC); MIA-1: shadow-model attack, MIA-2: "
+            "loss-threshold attack, MIA-3: offline LiRA (Carlini et al., 2022) with "
+            f"{lira.N_REFERENCE} reference models, also reported as TPR at 1\\% FPR. " + note,
+            "tab:utility_mia_heldout"))
     with open(os.path.join(OUT_DIR, "table_selected_mia1acc.tex"), "w") as f:
         f.write(make_selected_table(
             sel, [("MIA-1 Acc. forget", "forget_mia1_bacc"), ("MIA-1 Acc. retain", "retain_mia1_bacc")],
             "Balanced accuracy of the shadow-model attack (MIA-1, RandomForest decision) on forget vs. "
             "non-members and retain vs. non-members (chance = 0.50). " + note, "tab:mia1_acc_heldout"))
-    with open(os.path.join(OUT_DIR, "table_lr_grid.tex"), "w") as f:
-        f.write(make_grid_table(per_lr, sel))
-    figures = make_figures(per_lr, methods)
+    with open(os.path.join(OUT_DIR, "table_utility_mia_all.tex"), "w") as f:
+        f.write(make_paper_table(sel))
+    figures = []
+    if learning_rates is None:  # the grid table and sensitivity figures need every learning rate
+        with open(os.path.join(OUT_DIR, "table_lr_grid.tex"), "w") as f:
+            f.write(make_grid_table(per_lr, sel))
+        figures = make_figures(per_lr, methods)
 
     view = sel[["exp_id", "method", "selected_lr", "selected_epoch", "sel_distance", "eval_distance",
                 "retr_eval_forget_mia1_auc", "sel_mia1_forget_auc", "sel_forget_mia1_auc",
@@ -577,13 +694,13 @@ def report(experiments, methods):
               "evaluation half (auc_selhalf = same model on the selection half):")
         print(view.to_string(index=False))
     print(f"\nSaved {OUT_DIR}/: selection.csv, grid_per_lr.csv, grid_epochs.csv, table_selected.tex, "
-          f"table_selected_mia1acc.tex, table_lr_grid.tex, {len(figures)} figures")
+          f"table_selected_mia1acc.tex, table_utility_mia_all.tex" + (f", table_lr_grid.tex, {len(figures)} figures" if figures else ""))
 
 
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == "--worker":
         job = json.loads(sys.argv[2])
-        worker(job["exp_id"], job["methods"])
+        worker(job["exp_id"], job["methods"], job.get("learning_rates"))
         return
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--experiments", nargs="+", default=er.ALL_EXPERIMENTS, choices=er.ALL_EXPERIMENTS)
